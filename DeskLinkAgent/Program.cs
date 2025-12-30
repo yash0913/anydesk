@@ -34,9 +34,12 @@
             _ipcServer = new AgentIpcServer(deviceId);
             _ipcServer.Start();
 
-            // 4) Socket.IO client connect to backend (mock URL)
+            // 4) Socket.IO client connect to backend
+            string backendUrl = args.Length > 0 ? args[0] : "https://anydesk.onrender.com";
+            Console.WriteLine($"[DeskLinkAgent] Connecting to backend at: {backendUrl}");
+
             _socketClient = new SocketClient(deviceId, _ipcServer);
-            await _socketClient.ConnectAsync("https://anydesk.onrender.com");
+            await _socketClient.ConnectAsync(backendUrl);
 
             Console.WriteLine("[DeskLinkAgent] Running. Press Ctrl+C to exit.");
 
