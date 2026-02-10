@@ -184,6 +184,9 @@ function initDesklink(app, server, io) {
   });
 
   // /api/remote/accept
+  // DISABLED: This conflicts with remoteRoutes.js which uses MongoDB.
+  // The request goes to MongoDB (/api/remote/request) but accept was going to in-memory Map.
+  /*
   app.post('/api/remote/accept', (req, res) => {
     const { userId } = getAuthContextFromReq(req);
     const { sessionId, receiverDeviceId, permissions } = req.body || {};
@@ -265,8 +268,11 @@ function initDesklink(app, server, io) {
 
     return res.json({ session, callerToken, receiverToken });
   });
+  */
 
   // /api/remote/reject
+  // DISABLED: Same reason as accept - conflicts with remoteRoutes.js
+  /*
   app.post('/api/remote/reject', (req, res) => {
     const { userId } = getAuthContextFromReq(req);
     const { sessionId } = req.body || {};
@@ -301,8 +307,11 @@ function initDesklink(app, server, io) {
 
     return res.json({ session });
   });
+  */
 
   // /api/remote/complete
+  // DISABLED: Same reason - conflicts with remoteRoutes.js
+  /*
   app.post(['/api/remote/complete', '/api/remote/session/:id/complete'], (req, res) => {
     const { userId } = getAuthContextFromReq(req);
     const paramId = req.params && req.params.id;
@@ -335,6 +344,7 @@ function initDesklink(app, server, io) {
 
     return res.json({ session });
   });
+  */
 
   // /api/remote/turn-token
   // REMOVED: We want to use the main backend's implementation (in remoteRoutes.js)
