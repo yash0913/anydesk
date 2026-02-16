@@ -5438,11 +5438,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\yasha\\OneDrive\\Desktop\\again\\anydesk\\DeskLinkAgent\\DeskLinkAgent.csproj",
+      "projectUniqueName": "C:\\Users\\yasha\\OneDrive\\Desktop\\New folder\\anydesk\\DeskLinkAgent\\DeskLinkAgent.csproj",
       "projectName": "DeskLinkAgent",
-      "projectPath": "C:\\Users\\yasha\\OneDrive\\Desktop\\again\\anydesk\\DeskLinkAgent\\DeskLinkAgent.csproj",
+      "projectPath": "C:\\Users\\yasha\\OneDrive\\Desktop\\New folder\\anydesk\\DeskLinkAgent\\DeskLinkAgent.csproj",
       "packagesPath": "C:\\Users\\yasha\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\yasha\\OneDrive\\Desktop\\again\\anydesk\\DeskLinkAgent\\obj\\",
+      "outputPath": "C:\\Users\\yasha\\OneDrive\\Desktop\\New folder\\anydesk\\DeskLinkAgent\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
