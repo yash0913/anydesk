@@ -1,74 +1,102 @@
-    using DeskLinkAgent.DeviceId;
-    using DeskLinkAgent.IPC;
-    using DeskLinkAgent.Networking;
-    using DeskLinkAgent.Remote;
-    using System.Text.Json;
+using DeskLinkAgent.DeviceId;
+using DeskLinkAgent.IPC;
+using DeskLinkAgent.Networking;
 
-    namespace DeskLinkAgent;
+namespace DeskLinkAgent;
 
-    internal class Program
+internal class Program
+{
+    private const string Version = "1.0.0";
+
+    private static LocalApiServer? _apiServer;
+    private static AgentIpcServer? _ipcServer;
+    private static SocketClient? _socketClient;
+
+    public static async Task Main(string[] args)
     {
-        private static LocalApiServer? _apiServer;
-        private static AgentIpcServer? _ipcServer;
-        private static SocketClient? _socketClient;
-
-        public static async Task Main(string[] args)
+        AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
-            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
-            {
-                Console.Error.WriteLine($"[Unhandled] {e.ExceptionObject}");
-            };
+            Console.Error.WriteLine($"[ERROR] Unhandled exception: {e.ExceptionObject}");
+        };
 
-            Console.WriteLine("[DeskLinkAgent] Starting...");
+        Console.WriteLine("====================================");
+        Console.WriteLine($"DeskLink Agent v{Version}");
+        Console.WriteLine("====================================");
+        Console.WriteLine("[AGENT] Starting...");
 
-            // 1) Device ID
-            string deviceId = DeviceIdProvider.GetOrCreateDeviceId();
-            Console.WriteLine($"[DeskLinkAgent] deviceId={deviceId}");
+        string deviceId = DeviceIdProvider.GetOrCreateDeviceId();
+        Console.WriteLine($"[AGENT] DeviceId: {deviceId}");
 
-            // 2) Start local HTTP API
+        try
+        {
             _apiServer = new LocalApiServer(deviceId);
             await _apiServer.StartAsync();
-            Console.WriteLine("[DeskLinkAgent] Local API listening on http://127.0.0.1:17600");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("[ERROR] Failed to start Local API: " + ex.Message);
+        }
 
-            // 3) IPC server (named pipes based)
+        try
+        {
             _ipcServer = new AgentIpcServer(deviceId);
             _ipcServer.Start();
-
-            // 4) Socket.IO client connect to backend
-            string backendUrl = args.Length > 0 ? args[0] : "https://anydesk.onrender.com";
-            Console.WriteLine($"[DeskLinkAgent] Connecting to backend at: {backendUrl}");
-
-            _socketClient = new SocketClient(deviceId, _ipcServer);
-            await _socketClient.ConnectAsync(backendUrl);
-
-            Console.WriteLine("[DeskLinkAgent] Running. Press Ctrl+C to exit.");
-
-            // Handle graceful shutdown on Ctrl+C
-            var cts = new CancellationTokenSource();
-            Console.CancelKeyPress += (s, e) =>
-            {
-                e.Cancel = true;
-                cts.Cancel();
-            };
-
-            try
-            {
-                await Task.Delay(Timeout.Infinite, cts.Token);
-            }
-            catch (TaskCanceledException)
-            {
-                // expected on shutdown
-            }
-
-            await ShutdownAsync();
         }
-
-        private static async Task ShutdownAsync()
+        catch (Exception ex)
         {
-            Console.WriteLine("[DeskLinkAgent] Shutting down...");
-            try { await (_apiServer?.StopAsync() ?? Task.CompletedTask); } catch { }
-            try { _ipcServer?.Dispose(); } catch { }
-            try { await (_socketClient?.DisposeAsync() ?? ValueTask.CompletedTask); } catch { }
-            Console.WriteLine("[DeskLinkAgent] Bye.");
+            Console.Error.WriteLine("[ERROR] Failed to start IPC server: " + ex.Message);
         }
+
+        string backendUrl = args.Length > 0
+            ? args[0]
+            : (Environment.GetEnvironmentVariable("BACKEND_URL") ?? "https://your-backend.com");
+
+        _socketClient = new SocketClient(deviceId, _ipcServer!);
+        var jwt = await _socketClient.AuthenticateAsync(backendUrl);
+        if (string.IsNullOrWhiteSpace(jwt))
+        {
+            Console.Error.WriteLine("[ERROR] Could not obtain auth token. Exiting.");
+            await ShutdownAsync();
+            return;
+        }
+
+        try
+        {
+            await _socketClient.ConnectAsync(backendUrl, jwt!);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("[ERROR] Socket connection error: " + ex.Message);
+            await ShutdownAsync();
+            return;
+        }
+
+        Console.WriteLine("[AGENT] Waiting for remote sessions...");
+
+        var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (s, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        try
+        {
+            await Task.Delay(Timeout.Infinite, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+        }
+
+        await ShutdownAsync();
     }
+
+    private static async Task ShutdownAsync()
+    {
+        Console.WriteLine("[AGENT] Shutting down...");
+        try { await (_apiServer?.StopAsync() ?? Task.CompletedTask); } catch (Exception ex) { Console.Error.WriteLine("[ERROR] API stop: " + ex.Message); }
+        try { _ipcServer?.Dispose(); } catch (Exception ex) { Console.Error.WriteLine("[ERROR] IPC dispose: " + ex.Message); }
+        try { await (_socketClient?.DisposeAsync() ?? ValueTask.CompletedTask); } catch (Exception ex) { Console.Error.WriteLine("[ERROR] Socket dispose: " + ex.Message); }
+        Console.WriteLine("[AGENT] Bye.");
+    }
+}

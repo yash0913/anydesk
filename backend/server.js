@@ -12,6 +12,7 @@ const deviceRoutes = require('./routes/deviceRoutes');
 const contactLinkRoutes = require('./routes/contactLinkRoutes');
 const remoteRoutes = require('./routes/remoteRoutes');
 const agentProvisionRoutes = require('./routes/agentProvisionRoutes');
+const agentAuthRoutes = require('./routes/agentAuthRoutes');
 const { createSocketServer } = require('./socketManager');
 
 // Load environment variables
@@ -112,6 +113,7 @@ app.use('/api/messages', messagingRoutes);
 app.use('/api/device', deviceRoutes);
 app.use('/api/contact-links', contactLinkRoutes);
 app.use('/api/agent', agentProvisionRoutes);
+app.use('/api/agent', agentAuthRoutes);
 // Note: remoteRoutes is mounted later to allow desklink module to register its overrides first if needed
 
 // Create HTTP server and attach Socket.IO

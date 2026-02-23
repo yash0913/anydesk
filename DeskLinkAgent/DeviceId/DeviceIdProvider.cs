@@ -96,7 +96,8 @@ public static class DeviceIdProvider
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var dir = Path.Combine(appData, "DeskLinkAgent");
         Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "config.json");
+        // Persist device ID in a simple text file per requirements
+        return Path.Combine(dir, "device.id");
     }
 
     public static bool LoadConfig(out DeviceConfig config)
@@ -106,10 +107,10 @@ public static class DeviceIdProvider
         {
             var path = GetConfigPath();
             if (!File.Exists(path)) return false;
-            var json = File.ReadAllText(path, Encoding.UTF8);
-            var loaded = System.Text.Json.JsonSerializer.Deserialize<DeviceConfig>(json);
-            if (loaded == null || string.IsNullOrWhiteSpace(loaded.DeviceId)) return false;
-            config = loaded; return true;
+            var text = File.ReadAllText(path, Encoding.UTF8).Trim();
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            config = new DeviceConfig { DeviceId = text, CreatedAt = string.Empty };
+            return true;
         }
         catch (Exception ex)
         {
@@ -123,9 +124,7 @@ public static class DeviceIdProvider
         try
         {
             var path = GetConfigPath();
-            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-            var json = System.Text.Json.JsonSerializer.Serialize(config, options);
-            File.WriteAllText(path, json, Encoding.UTF8);
+            File.WriteAllText(path, config.DeviceId + Environment.NewLine, Encoding.UTF8);
         }
         catch (Exception ex)
         {
