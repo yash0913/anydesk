@@ -2,7 +2,26 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
 /**
- * Generate ephemeral session token for WebRTC signaling
+ * New: Create session-scoped JWT used in signaling payloads
+ */
+function createSessionToken({ sessionId, callerDeviceId, receiverDeviceId, role }) {
+  const secret = process.env.SESSION_SECRET || process.env.JWT_SECRET;
+  if (!secret) throw new Error('SESSION_SECRET missing');
+  return jwt.sign(
+    {
+      sessionId,
+      callerDeviceId: String(callerDeviceId),
+      receiverDeviceId: String(receiverDeviceId),
+      role,
+      type: 'desklink-session',
+    },
+    secret,
+    { expiresIn: '10m' }
+  );
+}
+
+/**
+ * Generate ephemeral session token for older flows (kept for compatibility)
  * Short-lived (5 minutes default) and tied to specific session
  */
 function generateSessionToken(sessionId, userId, deviceId, expiresInSeconds = 300) {
@@ -14,19 +33,21 @@ function generateSessionToken(sessionId, userId, deviceId, expiresInSeconds = 30
     iat: Math.floor(Date.now() / 1000),
   };
 
-  return jwt.sign(payload, process.env.JWT_SECRET, {
+  const secret = process.env.SESSION_SECRET || process.env.JWT_SECRET;
+  return jwt.sign(payload, secret, {
     expiresIn: expiresInSeconds,
   });
 }
 
 /**
- * Verify session token
+ * Verify session token (supports both token types)
  */
 function verifySessionToken(token) {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const secret = process.env.SESSION_SECRET || process.env.JWT_SECRET;
+    const decoded = jwt.verify(token, secret);
 
-    if (decoded.type !== 'webrtc-session') {
+    if (decoded.type !== 'webrtc-session' && decoded.type !== 'desklink-session') {
       console.warn('[sessionToken] invalid token type:', decoded.type);
       return null;
     }
@@ -37,6 +58,13 @@ function verifySessionToken(token) {
     return null; // ❗ do NOT throw, just return null
   }
 }
+
+module.exports = {
+  createSessionToken,
+  generateSessionToken,
+  verifySessionToken,
+  generateTurnCredentials,
+};
 
 
 /**

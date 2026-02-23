@@ -3,7 +3,7 @@ const RemoteSession = require('../models/RemoteSession');
 const Device = require('../models/Device');
 const ContactLink = require('../models/ContactLink');
 const { emitToUser, emitToDevice } = require('../socketManager');
-const { generateSessionToken } = require('../utils/sessionToken');
+const { createSessionToken } = require('../utils/sessionToken');
 
 // Ensure the calling device exists, belongs to the user, and is not blocked.
 // If the device record does not exist yet, auto-register it for the user.
@@ -208,9 +208,19 @@ const acceptRemoteSession = async (req, res) => {
     // (Optional safety) ensure that existing receiverDeviceId belongs to this user
     await ensureDeviceOwnership(session.receiverDeviceId, req.user._id);
 
-    // Generate ephemeral session tokens for both parties
-    const callerToken = generateSessionToken(sessionId, session.callerUserId, session.callerDeviceId, 300);
-    const receiverToken = generateSessionToken(sessionId, session.receiverUserId, session.receiverDeviceId, 300);
+    // Generate session-scoped JWTs for both parties (caller/receiver)
+    const callerToken = createSessionToken({
+      sessionId: session.sessionId,
+      callerDeviceId: session.callerDeviceId,
+      receiverDeviceId: session.receiverDeviceId,
+      role: 'caller',
+    });
+    const receiverToken = createSessionToken({
+      sessionId: session.sessionId,
+      callerDeviceId: session.callerDeviceId,
+      receiverDeviceId: session.receiverDeviceId,
+      role: 'receiver',
+    });
 
     session.status = 'accepted';
     session.sessionToken = receiverToken;
@@ -239,11 +249,13 @@ const acceptRemoteSession = async (req, res) => {
       resolution: session.resolution,
     };
 
+    console.log('[desklink-session-start emit]', { sessionId: session.sessionId, role: 'caller', hasToken: !!callerToken });
     emitToUser(session.callerUserId, 'desklink-session-start', {
       ...sessionMetadata,
       token: callerToken,
       role: 'caller',
     });
+    console.log('[desklink-session-start emit]', { sessionId: session.sessionId, role: 'receiver', hasToken: !!receiverToken });
     emitToDevice(session.receiverDeviceId, 'desklink-session-start', {
       ...sessionMetadata,
       token: receiverToken,

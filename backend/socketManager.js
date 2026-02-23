@@ -11,7 +11,7 @@ const User = require('./models/User');
 const Message = require('./models/Message');
 const RemoteSession = require('./models/RemoteSession');
 const Device = require('./models/Device');
-const { verifySessionToken } = require('./utils/sessionToken');
+const { verifySessionToken, createSessionToken } = require('./utils/sessionToken');
 
 let ioInstance = null;
 const onlineUsersByPhone = new Map(); // Map<phoneString, Set<socketId>>
@@ -261,17 +261,24 @@ function createSocketServer(server, clientOrigin) {
       try {
         console.log(`[webrtc-offer] Session: ${sessionId}, From: ${fromDeviceId} → To: ${toDeviceId}`);
 
-        // Optional: validate ephemeral session token
-        if (token) {
-          try {
-            const decoded = verifySessionToken(token);
-            if (decoded.sessionId && decoded.sessionId !== sessionId) {
-              console.error('[webrtc-offer] session token mismatch');
-              return;
-            }
-          } catch (e) {
-            console.warn('[webrtc-offer] token validation failed:', e.message);
+        if (!token) {
+          console.error('[WebRTC] Missing session token in offer');
+          return;
+        }
+
+        try {
+          const decoded = verifySessionToken(token);
+          if (!decoded) {
+            console.warn('[webrtc-offer] token validation failed: verify returned null');
+            return;
           }
+          if (decoded.sessionId && decoded.sessionId !== sessionId) {
+            console.error('[webrtc-offer] session token mismatch');
+            return;
+          }
+        } catch (e) {
+          console.warn('[webrtc-offer] token validation failed:', e.message);
+          return;
         }
 
         // Validate session ownership
@@ -365,16 +372,18 @@ function createSocketServer(server, clientOrigin) {
     // WebRTC ICE Candidate
     socket.on('webrtc-ice', async ({ sessionId, fromUserId, fromDeviceId, toDeviceId, candidate, token }) => {
       try {
-        // Don't log every ICE candidate (too verbose), just count them
-        if (token) {
-          try {
-            const decoded = verifySessionToken(token);
-            if (decoded.sessionId && decoded.sessionId !== sessionId) {
-              return;
-            }
-          } catch (e) {
-            // Silent fail for ICE candidates
+        if (!token) {
+          // Skip candidate if token missing
+          return;
+        }
+        try {
+          const decoded = verifySessionToken(token);
+          if (!decoded) return;
+          if (decoded.sessionId && decoded.sessionId !== sessionId) {
+            return;
           }
+        } catch (e) {
+          return;
         }
 
         const session = await validateSessionAccess(sessionId, fromUserId);

@@ -171,6 +171,11 @@ export function useDeskLinkWebRTC() {
             localUserId,
           } = sessionRef.current;
 
+          if (!sessionToken) {
+            console.warn('[WebRTC] Skipping ICE emit — no sessionToken');
+            return;
+          }
+
           console.log('[WebRTC] Sending local ICE candidate');
           
           socketRef.current.emit('webrtc-ice', {
@@ -420,6 +425,12 @@ export function useDeskLinkWebRTC() {
 
         // Small delay before sending
         await sleep(150);
+
+        // Guard: ensure we have a sessionToken
+        if (!sessionToken) {
+          console.error('[WebRTC] Missing sessionToken. Aborting offer emit.');
+          return;
+        }
 
         // Emit offer
         console.log('[WebRTC] Sending offer to', remoteDeviceId);

@@ -8,6 +8,7 @@ import { useAuth } from '../../auth/hooks/useAuth.js';
 import { desklinkApi } from '../services/desklink.api.js';
 import { useDeskLinkSocket } from '../hooks/useDeskLinkSocket.js';
 import SidebarShell from '../../chatspace/components/SidebarShell.jsx';
+import { AGENT_DOWNLOAD_URL } from '../utils/agentDownload.js';
 import {
   getNativeDeviceId,
   startRemoteClientSession,
@@ -271,6 +272,49 @@ export default function DeskLinkPage() {
     }
   };
 
+  const BACKEND_URL = import.meta.env.VITE_API_BASE?.replace(/\/api$/, '') || 'http://localhost:5000';
+
+  const handleDownloadAgent = () => {
+    window.open(AGENT_DOWNLOAD_URL, '_blank');
+  };
+
+  const handleProvisionAgent = async () => {
+    try {
+      if (!token) {
+        window.alert('Please login to provision the agent.');
+        return;
+      }
+
+      const provResp = await fetch(`${BACKEND_URL}/api/agent/provision`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (!provResp.ok) {
+        const t = await provResp.text();
+        throw new Error(`provision failed: ${provResp.status} ${t}`);
+      }
+      const { agentJwt } = await provResp.json();
+
+      const localResp = await fetch('http://127.0.0.1:17600/provision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverUrl: BACKEND_URL, agentJwt }),
+      });
+      if (!localResp.ok) {
+        const t = await localResp.text();
+        throw new Error(`local provision failed: ${localResp.status} ${t}`);
+      }
+      window.alert('Agent provisioned and connecting.');
+    } catch (e) {
+      console.error('Provision error', e);
+      window.alert(e.message || 'Provision failed');
+    }
+  };
+
   return (
     <div className="min-h-screen flex bg-slate-950 text-slate-50 w-full">
       <SidebarShell />
@@ -285,6 +329,23 @@ export default function DeskLinkPage() {
               selectedId={selectedContactId}
               onSelectContact={handleSelectContact}
             />
+
+            {/* Download & Provision Panel */}
+            <div className="mt-6 p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <h3 className="text-lg font-semibold mb-2">Install & Link DeskLink Agent</h3>
+              <p className="text-slate-400 text-sm mb-3">
+                Install the native agent on the target Windows machine. After install, click Provision to link it to your account.
+              </p>
+              <div className="flex gap-2">
+                <button className="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500" onClick={handleDownloadAgent}>
+                  Download Agent
+                </button>
+                <button className="px-3 py-2 rounded-md bg-slate-800 hover:bg-slate-700" onClick={handleProvisionAgent}>
+                  Provision Agent
+                </button>
+              </div>
+              <p className="text-slate-500 text-xs mt-2">If the agent is running, provisioning will connect it immediately.</p>
+            </div>
           </div>
 
           <div className="flex-1 flex items-center justify-center">
