@@ -36,7 +36,7 @@ export default function ScreenShareTile({ screenStream, presenterName, isLocal =
         muted={isLocal}
         className="h-full w-full object-contain"
       />
-      
+
       {/* Hidden audio element for remote screen share audio */}
       {!isLocal && (
         <audio ref={audioRef} autoPlay playsInline />

@@ -31,7 +31,7 @@ export default function MeetingRoom({
   onLeave,
 }) {
   const userId = useMemo(() => crypto.randomUUID(), []);
-  
+
   const {
     localStream,
     remoteStreams,
@@ -53,7 +53,7 @@ export default function MeetingRoom({
   const [showReactions, setShowReactions] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [activeSpeakerId, setActiveSpeakerId] = useState(null);
-const [isAnyDeskActive, setIsAnyDeskActive] = useState(false);
+  const [isAnyDeskActive, setIsAnyDeskActive] = useState(false);
 
   const localVideoRef = useRef(null);
   const remoteVideoRefs = useRef(new Map());
@@ -157,9 +157,8 @@ const [isAnyDeskActive, setIsAnyDeskActive] = useState(false);
             return (
               <div
                 key={participant.id}
-                className={`relative aspect-video rounded-lg overflow-hidden bg-slate-900 ${
-                  isActive ? 'ring-4 ring-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)]' : 'ring-2 ring-slate-800'
-                } ${participant.isScreenShare ? 'ring-4 ring-amber-500' : ''}`}
+                className={`relative aspect-video rounded-lg overflow-hidden bg-slate-900 ${isActive ? 'ring-4 ring-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)]' : 'ring-2 ring-slate-800'
+                  } ${participant.isScreenShare ? 'ring-4 ring-amber-500' : ''}`}
               >
                 {participant.stream && (participant.isScreenShare || isVideoEnabled || !participant.isLocal) ? (
                   <video
@@ -233,11 +232,10 @@ const [isAnyDeskActive, setIsAnyDeskActive] = useState(false);
             {/* Audio Toggle */}
             <button
               onClick={() => toggleAudio(!isAudioEnabled)}
-              className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-                isAudioEnabled
+              className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${isAudioEnabled
                   ? 'bg-slate-700 text-white hover:bg-slate-600'
                   : 'bg-red-600 text-white hover:bg-red-500'
-              }`}
+                }`}
               title={isAudioEnabled ? 'Mute' : 'Unmute'}
             >
               {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
@@ -246,11 +244,10 @@ const [isAnyDeskActive, setIsAnyDeskActive] = useState(false);
             {/* Video Toggle */}
             <button
               onClick={() => toggleVideo(!isVideoEnabled)}
-              className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-                isVideoEnabled
+              className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${isVideoEnabled
                   ? 'bg-slate-700 text-white hover:bg-slate-600'
                   : 'bg-red-600 text-white hover:bg-red-500'
-              }`}
+                }`}
               title={isVideoEnabled ? 'Turn off video' : 'Turn on video'}
             >
               {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
@@ -286,27 +283,26 @@ const [isAnyDeskActive, setIsAnyDeskActive] = useState(false);
             {/* Share Screen */}
             <button
               onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-              className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-                isScreenSharing
+              className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${isScreenSharing
                   ? 'bg-blue-600 text-white hover:bg-blue-500'
                   : 'bg-slate-700 text-white hover:bg-slate-600'
-              }`}
+                }`}
               title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
             >
               <Monitor className="h-5 w-5" />
             </button>
             {/* AnyDesk / Remote Access */}
-<button
-  onClick={() => {
-    console.log("AnyDesk clicked");
-    setIsAnyDeskActive(true);
-  }}
-  className="flex items-center justify-center w-12 h-12 rounded-full 
+            <button
+              onClick={() => {
+                console.log("AnyDesk clicked");
+                setIsAnyDeskActive(true);
+              }}
+              className="flex items-center justify-center w-12 h-12 rounded-full 
              bg-purple-600 text-white hover:bg-purple-500 transition-all"
-  title="Remote Access"
->
-  <Share2 className="h-5 w-5" />
-</button>
+              title="Remote Access"
+            >
+              <Share2 className="h-5 w-5" />
+            </button>
 
 
             {/* Host Tools (only for host) */}

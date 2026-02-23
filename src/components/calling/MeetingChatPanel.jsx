@@ -50,11 +50,10 @@ export default function MeetingChatPanel({
                 className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-lg px-3 py-2 shadow text-xs space-y-1 ${
-                    isSelf
+                  className={`max-w-[80%] rounded-lg px-3 py-2 shadow text-xs space-y-1 ${isSelf
                       ? 'bg-blue-600 text-white rounded-br-none'
                       : 'bg-slate-800 text-slate-100 rounded-bl-none'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-[11px]">

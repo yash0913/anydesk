@@ -147,6 +147,17 @@ export function MeetingRemoteControlProvider({ children }) {
     [token] // Removed 'user' dependency as we might use senderAuthId
   );
 
+  const checkUserAgentStatus = useCallback(async (targetUserId) => {
+    if (!token || !targetUserId) return 'offline';
+    try {
+      const data = await desklinkApi.getUserAgentStatus(token, targetUserId);
+      return data?.status || 'offline';
+    } catch (err) {
+      console.warn('[MeetingRemoteControl] checkUserAgentStatus failed', err);
+      return 'offline';
+    }
+  }, [token]);
+
   // Owner: accept/reject incoming request inside meeting
   const acceptIncomingRequest = useCallback(
     async (acceptPermissions) => {
@@ -189,29 +200,9 @@ export function MeetingRemoteControlProvider({ children }) {
 
     const handleSessionStart = async (payload) => {
       try {
-        console.log('[MeetingRemoteControl] desklink-session-start RAW payload:', payload);
-        console.log('[MeetingRemoteControl] desklink-session-start received:', { 
-          sessionId: payload.sessionId, 
-          role: payload.role, 
-          hasToken: !!payload.token,
-          tokenPreview: payload.token ? payload.token.substring(0, 50) : 'null',
-          tokenType: typeof payload.token,
-          tokenLength: payload.token?.length
-        });
-
-        if (!payload || !payload.sessionId) {
-          console.error('[MeetingRemoteControl] Invalid payload - missing sessionId');
-          return;
-        }
-
-        if (!payload.token) {
-          console.error('[MeetingRemoteControl] Missing sessionToken in payload. Aborting.');
-          return;
-        }
-
+        if (!payload || !payload.sessionId) return;
         if (payload.role !== 'caller') {
           // Host/agent side will be handled by native agent; we only drive viewer here
-          console.log('[MeetingRemoteControl] Role is not caller, skipping');
           return;
         }
 
@@ -225,20 +216,10 @@ export function MeetingRemoteControlProvider({ children }) {
           remoteDeviceId: payload.receiverDeviceId,
         };
 
-        console.log('[MeetingRemoteControl] Config built:', {
-          sessionId: config.sessionId,
-          hasAuthToken: !!config.authToken,
-          hasSessionToken: !!config.sessionToken,
-          sessionTokenPreview: config.sessionToken ? config.sessionToken.substring(0, 50) : 'null',
-          localDeviceId: config.localDeviceId,
-          remoteDeviceId: config.remoteDeviceId
-        });
-
         if (payload.permissions) {
           setPermissions((prev) => ({ ...prev, ...payload.permissions }));
         }
 
-        console.log('[MeetingRemoteControl] About to call beginControl with sessionToken:', config.sessionToken?.substring(0, 50));
         await beginControl(config);
       } catch (err) {
         console.error('[MeetingRemoteControl] desklink-session-start handler error', err);
@@ -275,6 +256,7 @@ export function MeetingRemoteControlProvider({ children }) {
 
     // Request flow from controller side
     requestControlForUser,
+    checkUserAgentStatus,
 
     // WebRTC state for remote desktop
     connectionState,

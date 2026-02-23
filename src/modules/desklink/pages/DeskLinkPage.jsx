@@ -68,41 +68,41 @@ export default function DeskLinkPage() {
 
   // Handle remote response (from other side)
   const handleRemoteResponse = useCallback(
-  (payload) => {
-    if (!pendingSession || payload.sessionId !== pendingSession.sessionId) {
-      return;
-    }
-
-    setShowWaitingModal(false);
-
-    if (payload.status === 'accepted') {
-      console.log('[DeskLink] remote-response payload', payload);
-
-      // 🔥 hostDeviceId = the machine we want to view / control
-      const remoteId = payload.hostDeviceId || payload.receiverDeviceId;
-
-      const qp = new URLSearchParams({
-        sessionId: String(payload.sessionId),
-        remoteDeviceId: String(remoteId),
-      });
-
-      if (payload.callerToken && payload.callerToken !== 'undefined' && payload.callerToken !== 'null') {
-        qp.set('sessionToken', String(payload.callerToken));
+    (payload) => {
+      if (!pendingSession || payload.sessionId !== pendingSession.sessionId) {
+        return;
       }
 
-      navigate(`/workspace/desklink/viewer?${qp.toString()}`);
-      
-      
-    } else if (payload.status === 'rejected') {
-      window.alert('Remote user rejected the DeskLink request.');
-    }
+      setShowWaitingModal(false);
 
-    if (payload.status === 'ended') {
-      setPendingSession(null);
-    }
-  },
-  [pendingSession, navigate]
-);
+      if (payload.status === 'accepted') {
+        console.log('[DeskLink] remote-response payload', payload);
+
+        // 🔥 hostDeviceId = the machine we want to view / control
+        const remoteId = payload.hostDeviceId || payload.receiverDeviceId;
+
+        const qp = new URLSearchParams({
+          sessionId: String(payload.sessionId),
+          remoteDeviceId: String(remoteId),
+        });
+
+        if (payload.callerToken && payload.callerToken !== 'undefined' && payload.callerToken !== 'null') {
+          qp.set('sessionToken', String(payload.callerToken));
+        }
+
+        navigate(`/workspace/desklink/viewer?${qp.toString()}`);
+
+
+      } else if (payload.status === 'rejected') {
+        window.alert('Remote user rejected the DeskLink request.');
+      }
+
+      if (payload.status === 'ended') {
+        setPendingSession(null);
+      }
+    },
+    [pendingSession, navigate]
+  );
 
 
   // Handle incoming request event -> show modal
@@ -321,50 +321,67 @@ export default function DeskLinkPage() {
       window.alert(e.message || 'Provision failed');
     }
   };
-
   return (
-    <div className="min-h-screen flex bg-slate-950 text-slate-50 w-full">
+    <div className="h-screen flex bg-slate-950 text-slate-50 w-full overflow-hidden">
       <SidebarShell />
 
-      <main className="flex-1 flex items-stretch justify-center">
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 lg:py-10 flex flex-col lg:flex-row gap-6 lg:gap-8">
-          <div className="w-full lg:max-w-sm">
-            <SavedDevicesPanel
-              contacts={filteredContacts}
-              search={search}
-              onSearchChange={setSearch}
-              selectedId={selectedContactId}
-              onSelectContact={handleSelectContact}
-            />
+      <main className="flex-1 flex flex-col items-center justify-center overflow-y-auto">
+        <div className="w-full max-w-6xl px-6 py-8 flex flex-col lg:flex-row items-start justify-center gap-8">
 
-            {/* Download & Provision Panel */}
-            <div className="mt-6 p-4 rounded-xl bg-slate-900 border border-slate-800">
-              <h3 className="text-lg font-semibold mb-2">Install & Link DeskLink Agent</h3>
-              <p className="text-slate-400 text-sm mb-3">
-                Install the native agent on the target Windows machine. After install, click Provision to link it to your account.
-              </p>
-              <div className="flex gap-2">
-                <button className="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500" onClick={handleDownloadAgent}>
-                  Download Agent
-                </button>
-                <button className="px-3 py-2 rounded-md bg-slate-800 hover:bg-slate-700" onClick={handleProvisionAgent}>
-                  Provision Agent
-                </button>
+          {/* Left Column: Contacts & Agent Info */}
+          <div className="w-full lg:w-80 flex flex-col gap-6 shrink-0">
+            <div className="flex flex-col gap-6">
+              <SavedDevicesPanel
+                contacts={filteredContacts}
+                search={search}
+                onSearchChange={setSearch}
+                selectedId={selectedContactId}
+                onSelectContact={handleSelectContact}
+              />
+
+              {/* Download & Provision Panel */}
+              <div className="p-5 rounded-2xl bg-slate-900/50 border border-slate-800 backdrop-blur-sm">
+                <h3 className="text-base font-semibold mb-2 text-indigo-400">
+                  Install & Link DeskLink Agent
+                </h3>
+                <p className="text-slate-400 text-xs leading-relaxed mb-4">
+                  Install the native agent on the target Windows machine. After install, click Provision to link it to your account.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    className="w-full px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 transition-colors text-sm font-medium"
+                    onClick={handleDownloadAgent}
+                  >
+                    Download Agent
+                  </button>
+                  <button
+                    className="w-full px-4 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors text-sm font-medium border border-slate-700"
+                    onClick={handleProvisionAgent}
+                  >
+                    Provision Agent
+                  </button>
+                </div>
+                <p className="text-slate-500 text-[10px] mt-3 text-center italic">
+                  If the agent is running, provisioning will connect it immediately.
+                </p>
               </div>
-              <p className="text-slate-500 text-xs mt-2">If the agent is running, provisioning will connect it immediately.</p>
             </div>
           </div>
 
-          <div className="flex-1 flex items-center justify-center">
-            <ConnectDeviceCard
-              initialDeviceId={
-                contacts.find((c) => c.id === selectedContactId)?.contactDeviceId || ''
-              }
-              onRequestAccess={handleManualRequest}
-            />
+          {/* Right Column: Connection Card */}
+          <div className="flex-1 w-full flex items-center justify-center min-h-[400px]">
+            <div className="w-full max-w-md">
+              <ConnectDeviceCard
+                initialDeviceId={
+                  contacts.find((c) => c.id === selectedContactId)?.contactDeviceId || ''
+                }
+                onRequestAccess={handleManualRequest}
+              />
+            </div>
           </div>
         </div>
 
+        {/* Modals remain the same */}
         {showWaitingModal && pendingSession && (
           <AccessRequestModal
             deviceId={pendingSession.receiverDeviceId}

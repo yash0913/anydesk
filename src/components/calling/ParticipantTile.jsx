@@ -71,9 +71,8 @@ export default function ParticipantTile({
 
   return (
     <div
-      className={`relative rounded-lg overflow-hidden bg-slate-900 ${
-        compact ? 'aspect-video' : 'aspect-video'
-      } ${isActiveSpeaker ? 'ring-4 ring-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)]' : 'ring-2 ring-slate-800'}`}
+      className={`relative rounded-lg overflow-hidden bg-slate-900 ${compact ? 'aspect-video' : 'aspect-video'
+        } ${isActiveSpeaker ? 'ring-4 ring-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)]' : 'ring-2 ring-slate-800'}`}
     >
       {/* Video element */}
       {hasVideo ? (

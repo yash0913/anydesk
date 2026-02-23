@@ -25,7 +25,7 @@ export default function MeetDashboard() {
     try {
       // Generate unique room ID (UUID)
       const roomId = crypto.randomUUID();
-      
+
       setMeetingState({
         roomId,
         userName: 'You',
@@ -34,7 +34,7 @@ export default function MeetDashboard() {
         initialAudioEnabled: previewData.isAudioEnabled,
         initialVideoEnabled: previewData.isVideoEnabled,
       });
-      
+
       setShowNewMeetingPreview(false);
     } catch (error) {
       console.error('Error starting meeting:', error);
@@ -74,7 +74,7 @@ export default function MeetDashboard() {
         initialAudioEnabled: !joinData.dontConnectAudio,
         initialVideoEnabled: !joinData.turnOffVideo,
       });
-      
+
       setShowJoinModal(false);
     } catch (error) {
       console.error('Error joining meeting:', error);
@@ -161,7 +161,7 @@ export default function MeetDashboard() {
           onStart={handleStartMeeting}
         />
       )}
-      
+
       {showJoinModal && (
         <JoinMeeting
           onClose={() => setShowJoinModal(false)}

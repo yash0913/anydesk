@@ -13,10 +13,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    allowedHosts: [
-      '.trycloudflare.com', // allow all cloudflared links
-      '.cfargotunnel.com',  // alternate domain cloudflared uses
-      'localhost',
-    ],
-  },
+    strictPort: false,
+    allowedHosts: true,
+  }
 });

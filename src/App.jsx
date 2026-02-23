@@ -2,6 +2,8 @@ import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import Messages from './modules/chatspace/pages/Messages.jsx';
 import Meet from './modules/meetspace/pages/Meet.jsx';
+import Settings from './modules/meetspace/pages/Settings.jsx';
+import Starred from './modules/meetspace/pages/Starred.jsx';
 import DeskLinkPage from './modules/desklink/pages/DeskLinkPage.jsx';
 const RemoteViewerPage = lazy(() => import('./modules/desklink/pages/RemoteViewerPage.jsx'));
 // --- AUTH IMPORTS ---
@@ -37,9 +39,9 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        
+
         {/* 1. WELCOME PAGE: This is the entry point for the entire application. */}
-        <Route path="/" element={<Welcome />} /> 
+        <Route path="/" element={<Welcome />} />
 
         {/* 2. AUTHENTICATION PAGES: /login and /signup */}
         <Route path="/login" element={<Login />} />
@@ -49,6 +51,8 @@ export default function App() {
         <Route element={<AuthGuard />}>
           <Route path="/workspace/messages" element={<Messages />} />
           <Route path="/workspace/meet" element={<Meet />} />
+          <Route path="/workspace/settings" element={<Settings />} />
+          <Route path="/workspace/starred" element={<Starred />} />
           <Route path="/workspace/desklink" element={<DeskLinkPage />} />
           <Route
             path="/workspace/desklink/viewer"

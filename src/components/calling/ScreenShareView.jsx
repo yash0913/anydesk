@@ -23,7 +23,7 @@ export default function ScreenShareView({
           isLocal={presenter?.id === localUserId}
           fullWidth={true}
         />
-        
+
         {/* Presenter camera as small floating window in bottom right */}
         {presenter && presenter.videoStream && (
           <div className="absolute bottom-4 right-4 w-48 h-36 shadow-lg">

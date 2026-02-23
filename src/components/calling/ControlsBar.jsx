@@ -1,186 +1,95 @@
-/**
- * ControlsBar - Bottom control bar with all meeting controls
- */
-
 import React from 'react';
 import {
-  Mic,
-  MicOff,
-  Video,
-  VideoOff,
-  Monitor,
-  PhoneOff,
-  Users,
-  MessageSquare,
-  Smile,
-  Settings,
-  Info,
-  MoreVertical,
-  Share2,
+  Mic, MicOff, Video, VideoOff, Monitor, PhoneOff,
+  Users, MessageSquare, Smile, Settings, Info,
+  MoreVertical, Share2,
 } from 'lucide-react';
 
 export default function ControlsBar({
-  isAudioEnabled,
-  isVideoEnabled,
-  isScreenSharing,
-  onToggleAudio,
-  onToggleVideo,
-  onScreenShare,
-  onLeave,
-  onEndMeeting,
-  participantCount,
-  roomId,
-  isHost = false,
-  onToggleParticipants,
-  onToggleChat,
-  onToggleReactions,
-  onToggleHostTools,
-  canUseMic = true,
-  canUseCamera = true,
-  isChatDisabled = false,
-  // In-meeting remote control (VisionDesk Control Mode)
-  isRemoteControlOpen = false,
-  onToggleRemoteControl,
+  isAudioEnabled, isVideoEnabled, isScreenSharing, onToggleAudio, onToggleVideo,
+  onScreenShare, onLeave, onEndMeeting, participantCount, roomId, isHost = false,
+  onToggleParticipants, onToggleChat, onToggleReactions, onToggleHostTools,
+  canUseMic = true, canUseCamera = true, isChatDisabled = false,
+  isRemoteControlOpen = false, onToggleRemoteControl,
 }) {
+
+  // Helper for button styles to keep code clean
+  const btnBase = "flex items-center justify-center w-11 h-11 rounded-2xl transition-all duration-200 active:scale-90 shadow-lg";
+  const btnSecondary = "bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/50 backdrop-blur-md";
+
   return (
-    <div className="border-t border-slate-800 bg-[#1E293B] px-6 py-4">
-      <div className="flex items-center justify-between max-w-7xl mx-auto">
-        {/* Left side - Meeting info */}
-        <div className="flex items-center gap-4">
-          <div className="text-sm text-slate-400">
-            Meeting ID: <span className="font-mono text-white">{roomId}</span>
+    <div className="fixed bottom-6 left-0 right-0 z-50 px-6">
+      <div className="max-w-6xl mx-auto bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-[28px] p-3 shadow-2xl flex items-center justify-between">
+
+        {/* Left Section: Meeting Status */}
+        <div className="hidden md:flex items-center gap-3 pl-4">
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Meeting ID</span>
+            <span className="text-sm font-mono text-indigo-400 font-semibold">{roomId}</span>
           </div>
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <Users className="h-4 w-4" />
-            <span>{participantCount}</span>
-          </div>
+          <div className="h-8 w-[1px] bg-slate-800 mx-2" />
+          <button onClick={onToggleParticipants} className="flex items-center gap-2 px-3 py-1.5 rounded-xl hover:bg-slate-800 transition-colors">
+            <Users className="h-4 w-4 text-slate-400" />
+            <span className="text-sm font-medium text-slate-200">{participantCount}</span>
+          </button>
         </div>
 
-        {/* Center - Main controls */}
-        <div className="flex items-center gap-2">
-          {/* Audio Toggle */}
+        {/* Center Section: Core Controls */}
+        <div className="flex items-center gap-3">
+          {/* Audio */}
           <button
             onClick={onToggleAudio}
-            className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-              isAudioEnabled
-                ? 'bg-slate-700 text-white hover:bg-slate-600'
-                : 'bg-red-600 text-white hover:bg-red-500'
-            } ${!canUseMic && !isHost ? 'opacity-60 cursor-not-allowed' : ''}`}
-            disabled={!canUseMic && !isHost}
+            className={`${btnBase} ${isAudioEnabled ? btnSecondary : 'bg-red-500 hover:bg-red-600 text-white animate-pulse-subtle'}`}
             title={isAudioEnabled ? 'Mute' : 'Unmute'}
           >
-            {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+            {isAudioEnabled ? <Mic size={20} /> : <MicOff size={20} />}
           </button>
 
-          {/* Video Toggle */}
+          {/* Video */}
           <button
             onClick={onToggleVideo}
-            className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-              isVideoEnabled
-                ? 'bg-slate-700 text-white hover:bg-slate-600'
-                : 'bg-red-600 text-white hover:bg-red-500'
-            } ${!canUseCamera && !isHost ? 'opacity-60 cursor-not-allowed' : ''}`}
-            disabled={!canUseCamera && !isHost}
+            className={`${btnBase} ${isVideoEnabled ? btnSecondary : 'bg-red-500 hover:bg-red-600 text-white'}`}
             title={isVideoEnabled ? 'Turn off video' : 'Turn on video'}
           >
-            {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+            {isVideoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
           </button>
 
-          {/* Participants */}
-          <button
-            onClick={onToggleParticipants}
-            className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-700 text-white hover:bg-slate-600 transition-all"
-            title="Participants"
-          >
-            <Users className="h-5 w-5" />
-          </button>
-
-          {/* Chat */}
-          <button
-            onClick={onToggleChat}
-            className={`flex items-center justify-center w-12 h-12 rounded-full bg-slate-700 text-white hover:bg-slate-600 transition-all ${
-              isChatDisabled && !isHost ? 'opacity-60' : ''
-            }`}
-            title="Chat"
-          >
-            <MessageSquare className="h-5 w-5" />
-          </button>
-
-          {/* Reactions */}
-          <button
-            onClick={onToggleReactions}
-            className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-700 text-white hover:bg-slate-600 transition-all"
-            title="Reactions"
-          >
-            <Smile className="h-5 w-5" />
-          </button>
-
-          {/* Share Screen */}
-          <button
-            onClick={onScreenShare}
-            className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-              isScreenSharing
-                ? 'bg-blue-600 text-white hover:bg-blue-500'
-                : 'bg-slate-700 text-white hover:bg-slate-600'
-            }`}
-            title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
-          >
-            <Monitor className="h-5 w-5" />
-          </button>
-
-          {/* Remote Control - In-Meeting VisionDesk Control Mode */}
-          <button
-            onClick={onToggleRemoteControl}
-            className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-              isRemoteControlOpen
-                ? 'bg-purple-600 text-white hover:bg-purple-500'
-                : 'bg-slate-700 text-white hover:bg-slate-600'
-            }`}
-            title="Remote Control"
-          >
-            <Share2 className="h-5 w-5" />
-          </button>
-
-          {/* Host Tools (only for host) */}
-          {isHost && (
-            <button
-              onClick={onToggleHostTools}
-              className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-700 text-white hover:bg-slate-600 transition-all"
-              title="Host Tools"
-            >
-              <Settings className="h-5 w-5" />
+          {/* Interactive Tools Group */}
+          <div className="flex items-center gap-2 bg-slate-800/40 p-1 rounded-2xl border border-slate-700/30">
+            <button onClick={onToggleChat} className={`${btnBase} ${btnSecondary} border-none shadow-none`}>
+              <MessageSquare size={20} />
             </button>
-          )}
+            <button onClick={onToggleReactions} className={`${btnBase} ${btnSecondary} border-none shadow-none`}>
+              <Smile size={20} />
+            </button>
+            <button onClick={onScreenShare} className={`${btnBase} ${isScreenSharing ? 'bg-blue-600 text-white' : btnSecondary} border-none shadow-none`}>
+              <Monitor size={20} />
+            </button>
+            <button onClick={onToggleRemoteControl} className={`${btnBase} ${isRemoteControlOpen ? 'bg-purple-600 text-white' : btnSecondary} border-none shadow-none`}>
+              <Share2 size={20} />
+            </button>
+          </div>
 
-          {/* Meeting Info */}
-          <button
-            className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-700 text-white hover:bg-slate-600 transition-all"
-            title="Meeting Info"
-          >
-            <Info className="h-5 w-5" />
-          </button>
-
-          {/* More */}
-          <button
-            className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-700 text-white hover:bg-slate-600 transition-all"
-            title="More"
-          >
-            <MoreVertical className="h-5 w-5" />
-          </button>
-
-          {/* End Meeting - Red button */}
-          <button
-            onClick={isHost && onEndMeeting ? onEndMeeting : onLeave}
-            className="ml-4 flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-medium px-6 py-2 rounded-full transition-colors"
-            title={isHost ? 'End meeting for everyone' : 'Leave meeting'}
-          >
-            <PhoneOff className="h-5 w-5" />
-            <span>{isHost ? 'End Meeting' : 'Leave'}</span>
+          {/* Host/Settings */}
+          <button className={`${btnBase} ${btnSecondary}`}>
+            <Settings size={20} />
           </button>
         </div>
 
-        {/* Right side - Empty for now */}
-        <div className="w-32"></div>
+        {/* Right Section: Exit */}
+        <div className="pr-2">
+          <button
+            onClick={isHost && onEndMeeting ? onEndMeeting : onLeave}
+            className="group flex items-center gap-3 bg-red-500/10 hover:bg-red-600 border border-red-500/20 px-5 py-2.5 rounded-2xl transition-all duration-300"
+          >
+            <span className="text-sm font-bold text-red-500 group-hover:text-white transition-colors">
+              {isHost ? 'End Meeting' : 'Leave'}
+            </span>
+            <div className="p-1.5 bg-red-500 rounded-lg text-white">
+              <PhoneOff size={16} />
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );
