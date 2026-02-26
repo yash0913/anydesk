@@ -24,6 +24,17 @@ export const desklinkApi = {
     return parseJSON(res);
   },
 
+  async getUserAgentStatus(token, userId, meetingId) {
+    const url = new URL(`${API_BASE}/device/user/${encodeURIComponent(userId)}/agent-status`);
+    if (meetingId) url.searchParams.set('meetingId', String(meetingId));
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return parseJSON(res);
+  },
+
   async listContacts(token) {
     const res = await fetch(`${API_BASE}/contact-links`, {
       headers: {

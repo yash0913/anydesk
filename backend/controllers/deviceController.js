@@ -1,6 +1,8 @@
 const Device = require('../models/Device');
 const User = require('../models/User');
 
+const ONLINE_WINDOW_MS = 120 * 1000;
+
 const ensureOwnership = (device, userId) => {
   if (!device) {
     return { error: { status: 404, message: 'Device not found' } };
@@ -80,6 +82,58 @@ const registerDevice = async (req, res) => {
 };
 
 /**
+ * GET /api/device/user/:userId/agent-status
+ * Returns { status: 'online'|'offline', lastOnline }
+ * Option A authorization: only allow if requester and target are in the same meeting.
+ */
+const getUserAgentStatus = async (req, res) => {
+  const { userId } = req.params;
+  const { meetingId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ message: 'userId is required' });
+  }
+
+  const requesterId = req.user && req.user._id ? String(req.user._id) : null;
+  if (!requesterId) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+
+  // Option A: require meetingId and verify both users are in the same meeting
+  if (!meetingId) {
+    return res.status(400).json({ message: 'meetingId query parameter is required' });
+  }
+
+  try {
+    // Check if both requester and target are in the same meeting room
+    const { isUserInMeeting } = require('../socketManager');
+    const requesterInMeeting = isUserInMeeting(meetingId, requesterId);
+    const targetInMeeting = isUserInMeeting(meetingId, String(userId));
+
+    if (!requesterInMeeting || !targetInMeeting) {
+      return res.status(403).json({ message: 'Not authorized: both users must be in the same meeting' });
+    }
+
+    const device = await Device.findOne({
+      userId: String(userId),
+      deleted: false,
+      blocked: false,
+    }).sort({ lastOnline: -1 });
+
+    const lastOnline = device && device.lastOnline ? new Date(device.lastOnline) : null;
+    const isOnline = !!lastOnline && Date.now() - lastOnline.getTime() <= ONLINE_WINDOW_MS;
+
+    return res.json({
+      status: isOnline ? 'online' : 'offline',
+      lastOnline,
+    });
+  } catch (error) {
+    console.error('[device/getUserAgentStatus] error', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * PATCH /api/device/:deviceId/block
  * Toggle block state for a device.
  */
@@ -147,6 +201,7 @@ module.exports = {
   registerDevice,
   setDeviceBlock,
   softDeleteDevice,
+  getUserAgentStatus,
 };
 
 

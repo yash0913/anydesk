@@ -951,7 +951,7 @@ function VideoRoomInner({
 
 export default function VideoRoom(props) {
   return (
-    <MeetingRemoteControlProvider>
+    <MeetingRemoteControlProvider meetingId={props.roomId}>
       <VideoRoomInner {...props} />
     </MeetingRemoteControlProvider>
   );

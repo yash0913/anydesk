@@ -14,11 +14,28 @@ const Device = require('./models/Device');
 const { verifySessionToken, createSessionToken } = require('./utils/sessionToken');
 
 let ioInstance = null;
+let roomsMap = null; // Map<roomId, Map<userId, {socketId, userName, isHost, authUserId}>>
 const onlineUsersByPhone = new Map(); // Map<phoneString, Set<socketId>>
 const onlineUsersById = new Map(); // Map<userId, Set<socketId>>
 const onlineDevicesById = new Map(); // Map<deviceId, Set<socketId>>
 const pendingSignalsByDevice = new Map(); // Map<deviceId, Array<{event,payload}>>
 const metrics = { activeSessions: 0, offersRelayed: 0, iceFailures: 0, datachannelMsgs: 0 };
+
+/**
+ * Check if a user (by authUserId) is currently in a meeting room.
+ * Used by REST API for Option A authorization.
+ */
+function isUserInMeeting(roomId, authUserId) {
+  if (!roomsMap || !roomId || !authUserId) return false;
+  const roomUsers = roomsMap.get(String(roomId));
+  if (!roomUsers) return false;
+  for (const [, data] of roomUsers.entries()) {
+    if (data && String(data.authUserId) === String(authUserId)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function trackUserSocket(map, key, socketId) {
   if (!key) return;
@@ -96,6 +113,7 @@ function createSocketServer(server, clientOrigin) {
 
   // Store room data for meetings
   const rooms = new Map(); // Map<roomId, Map<userId, {socketId, userName, isHost}>>
+  roomsMap = rooms; // expose for REST API authorization
   const roomPermissions = new Map(); // Map<roomId, { micLocked, cameraLocked, chatDisabled }>
   const roomChats = new Map(); // Map<roomId, Array<{ roomId, userId, userName, text, ts }>>
 
@@ -1148,4 +1166,4 @@ function getMetrics() {
   return { ...metrics };
 }
 
-module.exports = { createSocketServer, emitToUser, emitToDevice, getMetrics };
+module.exports = { createSocketServer, emitToUser, emitToDevice, getMetrics, isUserInMeeting };

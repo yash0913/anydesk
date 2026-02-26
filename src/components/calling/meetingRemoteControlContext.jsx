@@ -7,7 +7,7 @@ import { useAuth } from '../../modules/auth/hooks/useAuth.js';
 
 const MeetingRemoteControlContext = createContext(null);
 
-export function MeetingRemoteControlProvider({ children }) {
+export function MeetingRemoteControlProvider({ children, meetingId }) {
   const { user, token } = useAuth();
 
   const [isPanelOpen, setIsPanelOpen] = useState(false);
@@ -150,13 +150,13 @@ export function MeetingRemoteControlProvider({ children }) {
   const checkUserAgentStatus = useCallback(async (targetUserId) => {
     if (!token || !targetUserId) return 'offline';
     try {
-      const data = await desklinkApi.getUserAgentStatus(token, targetUserId);
+      const data = await desklinkApi.getUserAgentStatus(token, targetUserId, meetingId);
       return data?.status || 'offline';
     } catch (err) {
       console.warn('[MeetingRemoteControl] checkUserAgentStatus failed', err);
       return 'offline';
     }
-  }, [token]);
+  }, [token, meetingId]);
 
   // Owner: accept/reject incoming request inside meeting
   const acceptIncomingRequest = useCallback(
