@@ -15,6 +15,7 @@ import { MeetingRemoteControlProvider, useMeetingRemoteControl } from './meeting
 import RemoteVideoArea from '../../modules/desklink/components/RemoteVideoArea.jsx';
 import IncomingRequestModal from '../../modules/desklink/components/IncomingRequestModal.jsx';
 import { MousePointer2 } from 'lucide-react';
+import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
 
 function shortId(id) {
   if (!id) return '';
@@ -87,6 +88,28 @@ function VideoRoomInner({
     rejectIncomingRequest,
     checkUserAgentStatus, // Exported from context
   } = useMeetingRemoteControl();
+
+  // Debug logging for remote desktop
+  useEffect(() => {
+    console.log('[VideoRoom] ===== REMOTE DESKTOP STATE UPDATE =====');
+    console.log('[VideoRoom] isRemoteControlOpen:', isRemoteControlOpen);
+    console.log('[VideoRoom] hasRemoteStream:', !!remoteDesktopStream);
+    console.log('[VideoRoom] remoteDesktopStream:', remoteDesktopStream);
+    console.log('[VideoRoom] hasSessionConfig:', !!sessionConfig);
+    console.log('[VideoRoom] sessionConfig:', sessionConfig);
+    console.log('[VideoRoom] sessionConfigId:', sessionConfig?.sessionId);
+    console.log('[VideoRoom] remoteStreamTracks:', remoteDesktopStream?.getTracks()?.length || 0);
+    console.log('[VideoRoom] remoteStream active tracks:', remoteDesktopStream?.getActiveTracks()?.length || 0);
+    console.log('[VideoRoom] permissions:', permissions);
+    console.log('[VideoRoom] Should show RemoteVideoArea:', !!(remoteDesktopStream && sessionConfig));
+    
+    // Show alert when remote stream is received
+    if (remoteDesktopStream && !window._remoteStreamAlertShown) {
+      window._remoteStreamAlertShown = true;
+      console.log('[VideoRoom] 🎉 REMOTE STREAM RECEIVED! Check if panel is visible...');
+      alert('Remote desktop stream received! Panel should be visible now.');
+    }
+  }, [isRemoteControlOpen, remoteDesktopStream, sessionConfig, permissions]);
 
   const [isAccessPanelOpen, setIsAccessPanelOpen] = React.useState(false);
   const [accessStateByOwner, setAccessStateByOwner] = React.useState({});
@@ -953,6 +976,7 @@ export default function VideoRoom(props) {
   return (
     <MeetingRemoteControlProvider meetingId={props.roomId}>
       <VideoRoomInner {...props} />
+      <WebRTCDebugPanel />
     </MeetingRemoteControlProvider>
   );
 }

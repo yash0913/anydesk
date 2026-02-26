@@ -20,8 +20,24 @@ export default function RemoteVideoArea({
   const throttlerRef = useRef(new MessageThrottler(16));
 
   useEffect(() => {
+    console.log('[RemoteVideoArea] ===== STREAM UPDATE =====');
+    console.log('[RemoteVideoArea] stream:', stream);
+    console.log('[RemoteVideoArea] videoRef.current:', videoRef.current);
+    console.log('[RemoteVideoArea] stream tracks:', stream?.getTracks());
+    console.log('[RemoteVideoArea] stream active tracks:', stream?.getActiveTracks());
+    
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      console.log('[RemoteVideoArea] ✓ Stream set to video element');
+      console.log('[RemoteVideoArea] Stream tracks:', stream.getTracks());
+      console.log('[RemoteVideoArea] Video element srcObject:', videoRef.current.srcObject);
+      
+      // Force video to play
+      videoRef.current.play().catch(err => {
+        console.log('[RemoteVideoArea] Play error:', err);
+      });
+    } else {
+      console.log('[RemoteVideoArea] ❌ Cannot set stream - missing video element or stream');
     }
   }, [stream]);
 

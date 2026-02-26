@@ -5,12 +5,29 @@ import { io } from 'socket.io-client';
 // Local-first signaling endpoint; override with VITE_SOCKET_URL if desired.
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com';
 const TURN_ICE_SERVERS = [
-  { urls: "stun:stun.l.google.com:19302" },
   {
-    urls: "turn:avn.openai-coturn.workers.dev:443?transport=tcp",
-    username: "avneesh",
-    credential: "walkoli123",
+    urls: "stun:stun.relay.metered.ca:80",
   },
+  {
+    urls: "turn:global.relay.metered.ca:80",
+    username: "e6178bf1e6fe468787026c44",
+    credential: "lOyzquTmsN1b6RSo",
+  },
+  {
+    urls: "turn:global.relay.metered.ca:80?transport=tcp",
+    username: "e6178bf1e6fe468787026c44",
+    credential: "lOyzquTmsN1b6RSo",
+  },
+  {
+    urls: "turn:global.relay.metered.ca:443",
+    username: "e6178bf1e6fe468787026c44",
+    credential: "lOyzquTmsN1b6RSo",
+  },
+  {
+    urls: "turns:global.relay.metered.ca:443?transport=tcp",
+    username: "e6178bf1e6fe468787026c44",
+    credential: "lOyzquTmsN1b6RSo",
+  }
 ];
 
 function sleep(ms = 100) {

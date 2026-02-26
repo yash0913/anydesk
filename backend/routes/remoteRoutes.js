@@ -44,8 +44,29 @@ router.get('/turn-token',  (req, res) => {
       : 'anonymous';
 
     const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
+      {
+        urls: "stun:stun.relay.metered.ca:80",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80?transport=tcp",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      },
+      {
+        urls: "turns:global.relay.metered.ca:443?transport=tcp",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      }
     ];
 
     const hasTurnEnv = process.env.TURN_URL && process.env.TURN_SECRET;
@@ -75,8 +96,29 @@ router.get('/turn-token',  (req, res) => {
     // Still return STUN so WebRTC can function
     return res.status(200).json({
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
+        {
+          urls: "stun:stun.relay.metered.ca:80",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80",
+          username: "e6178bf1e6fe468787026c44",
+          credential: "lOyzquTmsN1b6RSo",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "e6178bf1e6fe468787026c44",
+          credential: "lOyzquTmsN1b6RSo",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "e6178bf1e6fe468787026c44",
+          credential: "lOyzquTmsN1b6RSo",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "e6178bf1e6fe468787026c44",
+          credential: "lOyzquTmsN1b6RSo",
+        }
       ],
     });
   }
