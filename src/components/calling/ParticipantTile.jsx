@@ -44,6 +44,25 @@ export default function ParticipantTile({
   useEffect(() => {
     if (audioRef.current && participant.audioStream && !isLocal) {
       const audio = audioRef.current;
+      const idLabel = participant?.id ? String(participant.id) : 'unknown';
+      const nameLabel = participant?.name ? String(participant.name) : 'Participant';
+      const audioTracks = participant.audioStream.getAudioTracks ? participant.audioStream.getAudioTracks() : [];
+      console.log(`[RTC][UI][AUDIO] attach for remote participant=${idLabel} (${nameLabel})`, {
+        hasAudioEl: !!audio,
+        mutedProp: audio.muted,
+        autoplayProp: audio.autoplay,
+        paused: audio.paused,
+        readyState: audio.readyState,
+        srcObjectExists: !!audio.srcObject,
+        streamId: participant.audioStream.id,
+        streamAudioTracks: audioTracks.length,
+        tracks: audioTracks.map((t) => ({
+          id: t.id,
+          enabled: t.enabled,
+          muted: t.muted,
+          readyState: t.readyState,
+        })),
+      });
       // Pause before changing srcObject to avoid AbortError
       audio.pause();
       audio.srcObject = participant.audioStream;
@@ -51,12 +70,20 @@ export default function ParticipantTile({
       // Use a small delay to ensure srcObject is set before playing
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
+        playPromise
+          .then(() => {
+            console.log(`[RTC][UI][AUDIO] play() resolved for participant=${idLabel}`, {
+              paused: audio.paused,
+              readyState: audio.readyState,
+              currentTime: audio.currentTime,
+            });
+          })
+          .catch((err) => {
           // Ignore AbortError - it's expected when srcObject changes
           if (err.name !== 'AbortError') {
             console.error('Error playing audio:', err);
           }
-        });
+          });
       }
     } else if (audioRef.current && isLocal) {
       // Local audio should be muted to prevent feedback

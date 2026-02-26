@@ -55,6 +55,11 @@ export function useRoomClient(roomId, userId, userName, isHost = false, onLeave 
   const connectionRetryCountRef = useRef(new Map());
   // Buffer incoming ICE candidates per peer until we have a remote description
   const pendingRemoteIceByPeerRef = useRef(new Map()); // Map<userId, RTCIceCandidateInit[]>
+  const logPrefixRef = useRef(`[RTC][room:${String(roomId)}][me:${String(userId)}]`);
+
+  useEffect(() => {
+    logPrefixRef.current = `[RTC][room:${String(roomId)}][me:${String(userId)}]`;
+  }, [roomId, userId]);
 
   // Store ICE servers in a ref so it's available synchronously
   const iceServersRef = useRef(null);
@@ -215,11 +220,40 @@ export function useRoomClient(roomId, userId, userName, isHost = false, onLeave 
       signalingStatesRef.current.set(targetUserId, 'stable');
 
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
+        const localTracks = localStreamRef.current.getTracks();
+        console.log(`${logPrefixRef.current} [SEND] creating PC to ${targetUserId} local tracks:`, localTracks.map((t) => ({
+          kind: t.kind,
+          id: t.id,
+          enabled: t.enabled,
+          muted: t.muted,
+          readyState: t.readyState,
+        })));
+
+        localTracks.forEach((track) => {
           if (track.enabled) {
             pc.addTrack(track, localStreamRef.current);
+          } else {
+            console.warn(`${logPrefixRef.current} [SEND] skipping disabled local track for ${targetUserId}:`, {
+              kind: track.kind,
+              id: track.id,
+              enabled: track.enabled,
+              muted: track.muted,
+              readyState: track.readyState,
+            });
           }
         });
+
+        try {
+          console.log(`${logPrefixRef.current} [SEND] senders to ${targetUserId} after addTrack:`, pc.getSenders().map((s) => ({
+            kind: s.track?.kind,
+            id: s.track?.id,
+            enabled: s.track?.enabled,
+            muted: s.track?.muted,
+            readyState: s.track?.readyState,
+          })));
+        } catch (e) {
+          console.warn(`${logPrefixRef.current} [SEND] could not enumerate senders for ${targetUserId}:`, e);
+        }
       }
 
       if (localScreenStreamRef.current) {
@@ -231,6 +265,17 @@ export function useRoomClient(roomId, userId, userName, isHost = false, onLeave 
       pc.ontrack = (event) => {
         const track = event.track;
         const stream = event.streams[0];
+
+        console.log(`${logPrefixRef.current} [RECV] ontrack from ${targetUserId}:`, {
+          kind: track?.kind,
+          id: track?.id,
+          enabled: track?.enabled,
+          muted: track?.muted,
+          readyState: track?.readyState,
+          streamId: stream?.id,
+          streamAudioTracks: stream?.getAudioTracks ? stream.getAudioTracks().length : null,
+          streamVideoTracks: stream?.getVideoTracks ? stream.getVideoTracks().length : null,
+        });
 
         let remoteStreams = remoteStreamsRef.current.get(targetUserId);
         if (!remoteStreams) {
@@ -262,6 +307,21 @@ export function useRoomClient(roomId, userId, userName, isHost = false, onLeave 
           remoteStreams.audioStream.addTrack(track);
         }
 
+        console.log(`${logPrefixRef.current} [RECV] remoteStreams for ${targetUserId} now:`, {
+          audioTracks: remoteStreams.audioStream.getAudioTracks().map((t) => ({
+            id: t.id,
+            enabled: t.enabled,
+            muted: t.muted,
+            readyState: t.readyState,
+          })),
+          videoTracks: remoteStreams.videoStream.getVideoTracks().map((t) => ({
+            id: t.id,
+            enabled: t.enabled,
+            muted: t.muted,
+            readyState: t.readyState,
+          })),
+        });
+
         setParticipants((prev) => {
           return prev.map((p) => {
             if (p.id === targetUserId) {
@@ -274,6 +334,36 @@ export function useRoomClient(roomId, userId, userName, isHost = false, onLeave 
             return p;
           });
         });
+      };
+
+      pc.onnegotiationneeded = async () => {
+        if (meetingEndedRef.current) return;
+        if (!socketRef.current) return;
+
+        if (pc.signalingState !== 'stable') {
+          console.log(`${logPrefixRef.current} [NEGOTIATE] skipped for ${targetUserId} (signalingState=${pc.signalingState})`);
+          return;
+        }
+
+        if (pendingOffersRef.current.has(targetUserId)) {
+          console.log(`${logPrefixRef.current} [NEGOTIATE] already in progress for ${targetUserId}, skipping`);
+          return;
+        }
+
+        try {
+          pendingOffersRef.current.add(targetUserId);
+          console.log(`${logPrefixRef.current} [NEGOTIATE] negotiationneeded -> creating offer for ${targetUserId}`);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socketRef.current.emit('offer', {
+            roomId,
+            to: targetUserId,
+            offer,
+          });
+        } catch (e) {
+          console.error(`${logPrefixRef.current} [NEGOTIATE] failed for ${targetUserId}:`, e);
+          pendingOffersRef.current.delete(targetUserId);
+        }
       };
 
       pc.onicecandidate = (event) => {
@@ -348,6 +438,27 @@ export function useRoomClient(roomId, userId, userName, isHost = false, onLeave 
 
       pc.onconnectionstatechange = () => {
         console.log(`🌐 [PEER] Connection state [${targetUserId}]: ${pc.connectionState}`);
+
+        if (pc.connectionState === 'connected') {
+          try {
+            console.log(`${logPrefixRef.current} [STATE] connected to ${targetUserId} senders:`, pc.getSenders().map((s) => ({
+              kind: s.track?.kind,
+              id: s.track?.id,
+              enabled: s.track?.enabled,
+              muted: s.track?.muted,
+              readyState: s.track?.readyState,
+            })));
+            console.log(`${logPrefixRef.current} [STATE] connected to ${targetUserId} receivers:`, pc.getReceivers().map((r) => ({
+              kind: r.track?.kind,
+              id: r.track?.id,
+              enabled: r.track?.enabled,
+              muted: r.track?.muted,
+              readyState: r.track?.readyState,
+            })));
+          } catch (e) {
+            console.warn(`${logPrefixRef.current} [STATE] could not enumerate senders/receivers for ${targetUserId}:`, e);
+          }
+        }
 
         if (pc.connectionState === 'connected') {
           console.log(`✅✅✅ [PEER] SUCCESSFULLY CONNECTED to ${targetUserId}!`);
@@ -432,7 +543,16 @@ export function useRoomClient(roomId, userId, userName, isHost = false, onLeave 
           ...constraints,
         };
 
+        console.log(`${logPrefixRef.current} [CAPTURE] getUserMedia constraints:`, defaultConstraints);
+
         const stream = await navigator.mediaDevices.getUserMedia(defaultConstraints);
+        console.log(`${logPrefixRef.current} [CAPTURE] local tracks:`, stream.getTracks().map((t) => ({
+          kind: t.kind,
+          id: t.id,
+          enabled: t.enabled,
+          muted: t.muted,
+          readyState: t.readyState,
+        })));
         localStreamRef.current = stream;
         setLocalStream(stream);
 
