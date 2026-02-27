@@ -516,7 +516,7 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
 
     };
 
-  }, [socket, token, user, handleOffer]);
+  }, [socket, token, user, startAsCaller]);
 
 
 

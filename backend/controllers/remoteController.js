@@ -823,17 +823,13 @@ const completeRemoteSession = async (req, res) => {
 
 
 // In-meeting remote access request (webId-only, background agent based).
-
-// fromUserId is ALWAYS req.user._id, never read from the body.
-
-// Frontend sends ONLY toUserId.
-
 const requestMeetingRemoteSession = async (req, res) => {
 
   const fromUserId = String(req.user && req.user._id);
 
   const { toUserId } = req.body || {};
 
+  // ...
 
 
   if (!fromUserId) {
@@ -984,13 +980,16 @@ const requestMeetingRemoteSession = async (req, res) => {
 
       sessionId: new mongoose.Types.ObjectId().toString(),
 
-      callerUserId: effectiveToUserId,        // Web user is caller (media source, creates offer)
+      // IMPORTANT: receiverUserId must be the user who will see the incoming request modal
+      // and click Accept (i.e. the target user). The accept endpoint authorizes by receiverUserId.
+      // WebRTC roles are assigned later in acceptRemoteSession via payload.role and tokens.
+      callerUserId: fromUserId,
 
-      receiverUserId: fromUserId,              // Phone user is receiver (viewer)
+      receiverUserId: effectiveToUserId,
 
-      callerDeviceId: receiverDevice.deviceId, // Web user's device (media source)
+      callerDeviceId: fromDeviceId,
 
-      receiverDeviceId: fromDeviceId,           // Phone user's device (viewer)
+      receiverDeviceId: receiverDevice.deviceId,
 
       status: 'pending',
 
