@@ -500,13 +500,17 @@ const acceptRemoteSession = async (req, res) => {
 
 
 
+    // For meeting sessions, swap roles: agent should be caller (initiate screen capture)
+    // and meeting component should be receiver (receive video stream)
+    const isMeetingSession = session.fromMeeting === true;
+
     const callerPayload = {
 
       ...sessionMetadata,
 
-      token: callerToken,
+      token: isMeetingSession ? receiverToken : callerToken, // Swap for meeting
 
-      role: 'caller',
+      role: 'caller', // Agent always caller for meeting
 
     };
 
@@ -532,33 +536,17 @@ const acceptRemoteSession = async (req, res) => {
 
     console.log('[desklink-session-start] Full caller payload:', JSON.stringify(callerPayload).substring(0, 200));
 
-    
-
-    emitToUser(session.callerUserId, 'desklink-session-start', callerPayload);
-
-    const receiverPayload = {
-
-      ...sessionMetadata,
-
-      token: receiverToken,
-
-      role: 'receiver',
-
-    };
-
-    
-
     console.log('[desklink-session-start emit]', { 
 
       sessionId: session.sessionId, 
 
       role: 'receiver', 
 
-      hasToken: !!receiverToken,
+      hasToken: !!receiverPayload.token,
 
-      tokenPreview: receiverToken?.substring(0, 50),
+      tokenPreview: receiverPayload.token?.substring(0, 50),
 
-      tokenLength: receiverToken?.length,
+      tokenLength: receiverPayload.token?.length,
 
       receiverDeviceId: session.receiverDeviceId 
 
@@ -568,7 +556,19 @@ const acceptRemoteSession = async (req, res) => {
 
     
 
-    emitToDevice(session.receiverDeviceId, 'desklink-session-start', receiverPayload);
+    // Emit to agent (caller) for meeting sessions, or to user for regular sessions
+    if (isMeetingSession) {
+      emitToDevice(session.receiverDeviceId, 'desklink-session-start', callerPayload);
+    } else {
+      emitToUser(session.callerUserId, 'desklink-session-start', callerPayload);
+    }
+
+    // Emit to meeting user (receiver) for meeting sessions, or to agent for regular sessions
+    if (isMeetingSession) {
+      emitToUser(session.callerUserId, 'desklink-session-start', receiverPayload);
+    } else {
+      emitToDevice(session.receiverDeviceId, 'desklink-session-start', receiverPayload);
+    }
 
 
 

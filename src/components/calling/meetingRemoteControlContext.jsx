@@ -430,11 +430,11 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
 
         }
 
-        if (payload.role !== 'caller') {
+        if (payload.role !== 'receiver') {
 
-          console.log('[MeetingRemoteControl] ❌ Not caller role, skipping');
+          console.log('[MeetingRemoteControl] ❌ Not receiver role, skipping');
 
-          // Host/agent side will be handled by native agent; we only drive viewer here
+          // Agent side will handle caller role; we only handle receiver here
 
           return;
 
@@ -442,7 +442,7 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
 
 
 
-        console.log('[MeetingRemoteControl] ✅ Starting session as caller');
+        console.log('[MeetingRemoteControl] ✅ Starting session as receiver');
 
 
 
@@ -480,11 +480,11 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
 
 
 
-        console.log('[MeetingRemoteControl] 🚀 Calling beginControl...');
+        console.log('[MeetingRemoteControl] 🚀 Calling handleOffer...');
 
-        await beginControl(config);
+        await handleOffer(config);
 
-        console.log('[MeetingRemoteControl] ✅ beginControl completed');
+        console.log('[MeetingRemoteControl] ✅ handleOffer completed');
 
       } catch (err) {
 
@@ -504,7 +504,7 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
 
     };
 
-  }, [socket, token, user, beginControl]);
+  }, [socket, token, user, handleOffer]);
 
 
 
