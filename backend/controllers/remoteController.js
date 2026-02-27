@@ -251,7 +251,7 @@ const acceptRemoteSession = async (req, res) => {
 
     // For meeting sessions, swap roles: agent should be caller (initiate screen capture)
     // and meeting component should be receiver (receive video stream)
-    const isMeetingSession = req.body.meetingId || req.body.fromMeeting;
+    const isMeetingSession = req.body.fromMeeting || session.fromMeeting; // ✅ Check both request and stored flag
     
     const callerPayload = {
       ...sessionMetadata,
@@ -422,7 +422,7 @@ const completeRemoteSession = async (req, res) => {
 // Frontend sends ONLY toUserId.
 const requestMeetingRemoteSession = async (req, res) => {
   const fromUserId = String(req.user && req.user._id);
-  const { toUserId } = req.body || {};
+  const { toUserId, fromMeeting } = req.body || {}; // ✅ Capture fromMeeting flag
 
   if (!fromUserId) {
     return res.status(401).json({ message: 'Not authenticated' });
@@ -504,6 +504,7 @@ const requestMeetingRemoteSession = async (req, res) => {
       receiverDeviceId: receiverDevice.deviceId,
       status: 'pending',
       startedAt: new Date(),
+      fromMeeting: fromMeeting === true, // ✅ Store meeting flag
     });
 
     const payload = {
