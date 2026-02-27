@@ -24,7 +24,7 @@ export default function RemoteVideoArea({
     console.log('[RemoteVideoArea] stream:', stream);
     console.log('[RemoteVideoArea] videoRef.current:', videoRef.current);
     console.log('[RemoteVideoArea] stream tracks:', stream?.getTracks());
-    console.log('[RemoteVideoArea] stream active tracks:', stream?.getActiveTracks());
+    console.log('[RemoteVideoArea] stream active tracks:', stream?.getTracks().filter(track => track.enabled));
     
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;

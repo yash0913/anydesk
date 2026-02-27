@@ -5,6 +5,9 @@ import { io } from 'socket.io-client';
 // Local-first signaling endpoint; override with VITE_SOCKET_URL if desired.
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com';
 const TURN_ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
   {
     urls: "stun:stun.relay.metered.ca:80",
   },
@@ -703,12 +706,6 @@ export function useDeskLinkWebRTC() {
     startedRef.current = false;
     pendingRemoteIceCandidatesRef.current = [];
   }, [stopStatsCollection]);
-
-  useEffect(() => {
-    return () => {
-      stopSession();
-    };
-  }, [stopSession]);
 
   return {
     connectionState,

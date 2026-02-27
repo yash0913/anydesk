@@ -42,6 +42,7 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
     remoteStream,
     stats,
     startAsCaller,
+    handleOffer,
     sendControlMessage,
     stopSession,
     setOnDataMessage,
@@ -99,7 +100,14 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
         try {
           const data = await desklinkApi.getTurnToken(token);
           if (data && Array.isArray(data.iceServers) && data.iceServers.length > 0) {
-            effectiveConfig = { ...effectiveConfig, iceServers: data.iceServers };
+            // Add Google STUN servers to the backend response for better connectivity
+            const enhancedIceServers = [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:stun2.l.google.com:19302" },
+              ...data.iceServers
+            ];
+            effectiveConfig = { ...effectiveConfig, iceServers: enhancedIceServers };
           }
         } catch (err) {
           console.error('[MeetingRemoteControl] Failed to fetch ICE servers for DeskLink session', err);
@@ -194,7 +202,7 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
     [incomingRequest, token]
   );
 
-  // Handle desklink-session-start -> start WebRTC as caller when we are controller
+  // Handle desklink-session-start -> start WebRTC as receiver when we are in meeting
   useEffect(() => {
     if (!socket) return;
 
@@ -207,22 +215,22 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
           console.log('[MeetingRemoteControl] ❌ No payload or sessionId');
           return;
         }
-        if (payload.role !== 'caller') {
-          console.log('[MeetingRemoteControl] ❌ Not caller role, skipping');
-          // Host/agent side will be handled by native agent; we only drive viewer here
+        if (payload.role !== 'receiver') {
+          console.log('[MeetingRemoteControl] ❌ Not receiver role, skipping');
+          // Agent side will handle caller role; we only handle receiver here
           return;
         }
 
-        console.log('[MeetingRemoteControl] ✅ Starting session as caller');
+        console.log('[MeetingRemoteControl] ✅ Starting session as receiver');
 
-        const effectiveUserId = user ? (user._id || user.id) : 'anon-caller';
+        const effectiveUserId = user ? (user._id || user.id) : 'anon-receiver';
         const config = {
           sessionId: payload.sessionId,
           authToken: token,
           sessionToken: payload.token,
           localUserId: effectiveUserId,
-          localDeviceId: payload.callerDeviceId,
-          remoteDeviceId: payload.receiverDeviceId,
+          localDeviceId: payload.callerDeviceId, // In meeting, we are the caller device
+          remoteDeviceId: payload.receiverDeviceId, // Agent is the receiver device
         };
 
         console.log('[MeetingRemoteControl] WebRTC config:', config);
@@ -232,9 +240,9 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
           setPermissions((prev) => ({ ...prev, ...payload.permissions }));
         }
 
-        console.log('[MeetingRemoteControl] 🚀 Calling beginControl...');
-        await beginControl(config);
-        console.log('[MeetingRemoteControl] ✅ beginControl completed');
+        console.log('[MeetingRemoteControl] 🚀 Calling handleOffer...');
+        await handleOffer(config);
+        console.log('[MeetingRemoteControl] ✅ handleOffer completed');
       } catch (err) {
         console.error('[MeetingRemoteControl] desklink-session-start handler error', err);
       }
@@ -244,7 +252,7 @@ export function MeetingRemoteControlProvider({ children, meetingId }) {
     return () => {
       socket.off('desklink-session-start', handleSessionStart);
     };
-  }, [socket, token, user, beginControl]);
+  }, [socket, token, user, handleOffer]);
 
   const value = {
     // UI state

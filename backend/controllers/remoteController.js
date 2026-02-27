@@ -249,41 +249,58 @@ const acceptRemoteSession = async (req, res) => {
       resolution: session.resolution,
     };
 
+    // For meeting sessions, swap roles: agent should be caller (initiate screen capture)
+    // and meeting component should be receiver (receive video stream)
+    const isMeetingSession = req.body.meetingId || req.body.fromMeeting;
+    
     const callerPayload = {
       ...sessionMetadata,
-      token: callerToken,
-      role: 'caller',
+      token: isMeetingSession ? receiverToken : callerToken, // Swap for meeting
+      role: isMeetingSession ? 'caller' : 'caller', // Agent always caller for meeting
     };
     
     console.log('[desklink-session-start emit]', { 
       sessionId: session.sessionId, 
-      role: 'caller', 
-      hasToken: !!callerToken,
-      tokenPreview: callerToken?.substring(0, 50),
-      tokenLength: callerToken?.length,
-      callerUserId: session.callerUserId,
-      callerDeviceId: session.callerDeviceId 
+      role: callerPayload.role,
+      isMeetingSession,
+      hasToken: !!callerPayload.token,
+      tokenPreview: callerPayload.token?.substring(0, 50),
+      tokenLength: callerPayload.token?.length,
+      callerUserId: isMeetingSession ? session.receiverDeviceId : session.callerUserId,
+      callerDeviceId: isMeetingSession ? session.receiverDeviceId : session.callerDeviceId
     });
     console.log('[desklink-session-start] Full caller payload:', JSON.stringify(callerPayload).substring(0, 200));
     
-    emitToUser(session.callerUserId, 'desklink-session-start', callerPayload);
+    // Emit to agent (caller) for meeting sessions, or to user for regular sessions
+    if (isMeetingSession) {
+      emitToDevice(session.receiverDeviceId, 'desklink-session-start', callerPayload);
+    } else {
+      emitToUser(session.callerUserId, 'desklink-session-start', callerPayload);
+    }
+    
     const receiverPayload = {
       ...sessionMetadata,
-      token: receiverToken,
+      token: isMeetingSession ? callerToken : receiverToken, // Swap for meeting
       role: 'receiver',
     };
     
     console.log('[desklink-session-start emit]', { 
       sessionId: session.sessionId, 
-      role: 'receiver', 
-      hasToken: !!receiverToken,
-      tokenPreview: receiverToken?.substring(0, 50),
-      tokenLength: receiverToken?.length,
-      receiverDeviceId: session.receiverDeviceId 
+      role: 'receiver',
+      isMeetingSession,
+      hasToken: !!receiverPayload.token,
+      tokenPreview: receiverPayload.token?.substring(0, 50),
+      tokenLength: receiverPayload.token?.length,
+      receiverDeviceId: isMeetingSession ? session.callerDeviceId : session.receiverDeviceId
     });
     console.log('[desklink-session-start] Full receiver payload:', JSON.stringify(receiverPayload).substring(0, 200));
     
-    emitToDevice(session.receiverDeviceId, 'desklink-session-start', receiverPayload);
+    // Emit to meeting user (receiver) for meeting sessions, or to agent for regular sessions
+    if (isMeetingSession) {
+      emitToUser(session.callerUserId, 'desklink-session-start', receiverPayload);
+    } else {
+      emitToDevice(session.receiverDeviceId, 'desklink-session-start', receiverPayload);
+    }
 
     // Legacy / compatibility
     emitToUser(session.callerUserId, 'desklink-remote-response', {

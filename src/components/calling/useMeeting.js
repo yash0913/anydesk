@@ -31,8 +31,32 @@ export function useMeeting(roomId, userId, isHost = false, externalStream = null
   }, [externalStream]);
   const iceServers = {
     iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+      {
+        urls: "stun:stun.relay.metered.ca:80",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80?transport=tcp",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      },
+      {
+        urls: "turns:global.relay.metered.ca:443?transport=tcp",
+        username: "e6178bf1e6fe468787026c44",
+        credential: "lOyzquTmsN1b6RSo",
+      }
     ],
   };
 
