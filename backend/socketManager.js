@@ -134,20 +134,19 @@ async function validateSessionAccess(sessionId, userId) {
 function createSocketServer(server, clientOrigin) {
   const io = new Server(server, {
     cors: {
-      origin: clientOrigin,
+      origin: '*',
       methods: ['GET', 'POST'],
-      credentials: true,
     },
   });
 
   ioInstance = io;
-  
+
   // Expose debug endpoint
   io.use('/debug', (req, res, next) => {
     if (req.method !== 'GET') {
       return res.status(405).json({ error: 'Method not allowed' });
     }
-    
+
     try {
       const { getSocketState } = require('./debug-endpoint');
       const state = getSocketState();
@@ -298,16 +297,16 @@ function createSocketServer(server, clientOrigin) {
       }
 
       console.log(`[AUTH] SUCCESS: User ${user._id} (${user.countryCode} ${user.phoneNumber}) authenticated from socket ${socket.id}`);
-      
+
       socket.user = user;
       socket.userPhone = `${user.countryCode} ${user.phoneNumber}`;
       socket.userId = String(user._id);
-      
+
       // Track this socket
       trackUserSocket(userSockets, socket.userId, socket.id);
       trackUserSocket(onlineUsersByPhone, socket.userPhone, socket.id);
       trackUserSocket(onlineUsersById, socket.userId, socket.id);
-      
+
       return next();
     } catch (err) {
       console.log(`[AUTH] ERROR: Authentication failed for socket ${socket.id}:`, err.message);
@@ -873,7 +872,7 @@ function createSocketServer(server, clientOrigin) {
           console.log(`[BACKEND] Emitting to host user ${hostUserId} on ${hostSockets.size} sockets`);
           let successCount = 0;
           let failureCount = 0;
-          
+
           hostSockets.forEach((socketId) => {
             const targetSocket = ioInstance.sockets.sockets.get(socketId);
             if (targetSocket) {
@@ -894,7 +893,7 @@ function createSocketServer(server, clientOrigin) {
               console.log(`[BACKEND] Failed to emit to host socket ${socketId} - socket not found`);
             }
           });
-          
+
           console.log(`[BACKEND] Emit summary: ${successCount} success, ${failureCount} failures`);
         } else {
           console.log(`[BACKEND] No host sockets found for user ${hostUserId}`);

@@ -15,5 +15,17 @@ export default defineConfig({
     host: '0.0.0.0',
     strictPort: false,
     allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: 'https://anydesk.onrender.com',
+        changeOrigin: true,
+        secure: true,
+      },
+      '/socket.io': {
+        target: 'https://anydesk.onrender.com',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
   }
 });

@@ -26,77 +26,9 @@ const app = express();
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 
-// Dynamic CORS configuration: allow localhost, trycloudflare tunnels, and any
-// origins explicitly listed in CLIENT_ORIGIN (comma-separated).
-const allowedOrigins = new Set(
-  CLIENT_ORIGIN.split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-);
-
-function isOriginAllowed(origin) {
-  if (!origin) return true; // non-browser clients, mobile apps, curl
-
-  try {
-    const url = new URL(origin);
-    const host = url.host || '';
-
-    // 1. Allow localhost (dev)
-    if (
-      host.startsWith('localhost:') ||
-      host.startsWith('127.0.0.1:') ||
-      host === 'localhost' ||
-      host === '127.0.0.1'
-    ) {
-      return true;
-    }
-
-    // 2. Allow Cloudflare tunnels (*.trycloudflare.com)
-    if (host.endsWith('.trycloudflare.com')) {
-      // console.log('[CORS] Allowing Cloudflare tunnel:', origin);
-      return true;
-    }
-
-    // 3. Allow Render domains (*.onrender.com)
-    if (host.endsWith('.onrender.com')) {
-      return true;
-    }
-
-    // 4. Check explicit allowed origins list (e.g. env var)
-    if (allowedOrigins.has(origin)) {
-      return true;
-    }
-
-    // 5. Allow some common variations if needed or development
-    // Just in case the origin string comes in without protocol for some reason (rare for valid browsers)
-    if (allowedOrigins.has(host)) return true;
-
-  } catch (e) {
-    console.error('[CORS] Error parsing origin:', origin, e);
-    // If URL parsing fails, fall back to exact match
-    if (allowedOrigins.has(origin)) return true;
-  }
-
-  return false;
-}
-
+// Open CORS to all origins — required for dynamic Cloudflare tunnel URLs
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (isOriginAllowed(origin)) {
-      // Pass null, true to reflect the origin in Access-Control-Allow-Origin
-      return callback(null, true);
-    }
-
-    console.warn('[CORS] Blocked origin:', origin);
-    // Be explicit about why we blocked it in logs
-    // For now, to "fix at any cost", if we are unsure, we might want to default allow 
-    // BUT explicit allow of trycloudflare.com above should cover it.
-    // If you are extremely desperate, uncomment the next line to open to ALL (insecure):
-    // return callback(null, true); 
-
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-device-id', 'x-user-id', 'x-user-name'],
 };
