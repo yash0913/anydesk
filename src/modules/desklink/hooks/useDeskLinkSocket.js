@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
+import { getSocket } from '../../socket.js';
 
 // Local-first Socket.IO endpoint for DeskLink / meeting remote control.
 // You can still override this with VITE_SOCKET_URL if needed.
@@ -34,17 +34,14 @@ export function useDeskLinkSocket({ token, onRemoteRequest, onRemoteResponse }) 
       return;
     }
 
-    const s = io(SOCKET_URL, {
-      auth: { token: effectiveToken },
-      transports: ['websocket'],
-      path: '/socket.io',
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: Infinity,
+    // Create/get global socket instance
+    getSocket(effectiveToken).then(socket => {
+      socketRef.current = socket;
+      setSocket(socket);
+      console.log('[useDeskLinkSocket] Global socket connected:', socket.id);
+    }).catch(err => {
+      console.error('[useDeskLinkSocket] Failed to get socket:', err);
     });
-
-    socketRef.current = s;
-    setSocket(s);
 
     try {
       // Expose as shared socket for other modules (e.g. useDeskLinkWebRTC)

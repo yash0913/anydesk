@@ -141,6 +141,22 @@ function createSocketServer(server, clientOrigin) {
   });
 
   ioInstance = io;
+  
+  // Expose debug endpoint
+  io.use('/debug', (req, res, next) => {
+    if (req.method !== 'GET') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+    
+    try {
+      const { getSocketState } = require('./debug-endpoint');
+      const state = getSocketState();
+      res.json(state);
+    } catch (err) {
+      console.error('[DEBUG] Error generating socket state:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // Store room data for meetings
   const rooms = new Map(); // Map<roomId, Map<userId, {socketId, userName, isHost}>>
@@ -224,42 +240,79 @@ function createSocketServer(server, clientOrigin) {
     if (byOwner.size === 0) meetingAccessState.delete(roomId);
   }
 
-  // Authenticate socket connections using JWT (Permissive for guests)
+  // Socket tracking per user
+  const userSockets = new Map(); // Map<userId, Set<socketId>>
+
+  function trackUserSocket(socketMap, key, socketId) {
+    if (!socketMap.has(key)) {
+      socketMap.set(key, new Set());
+    }
+    socketMap.get(key).add(socketId);
+    console.log(`[SOCKET TRACK] Added socket ${socketId} to user ${key}`);
+  }
+
+  function removeUserSocket(socketMap, key, socketId) {
+    if (socketMap.has(key)) {
+      socketMap.get(key).delete(socketId);
+      console.log(`[SOCKET TRACK] Removed socket ${socketId} from user ${key}`);
+      if (socketMap.get(key).size === 0) {
+        socketMap.delete(key);
+        console.log(`[SOCKET TRACK] User ${key} has no more sockets, removed entry`);
+      }
+    }
+  }
+
+  function getUserSockets(userId) {
+    return userSockets.get(String(userId)) || new Set();
+  }
+
+  // Authenticate socket connections using JWT (STRICT - No Guests)
   io.use(async (socket, next) => {
     try {
       const auth = socket.handshake.auth || {};
       const token = auth.token;
 
       if (!token) {
-        // Guest mode / Anonymous
-        socket.user = null;
-        socket.userId = `guest-${socket.id}`;
-        socket.userPhone = 'Guest';
-        return next();
+        console.log(`[AUTH] REJECTED: No token provided from socket ${socket.id}`);
+        socket.emit('auth-error', { message: 'Authentication required' });
+        socket.disconnect(true);
+        return;
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id).select('-password');
+      let decoded;
+      try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+      } catch (err) {
+        console.log(`[AUTH] REJECTED: Invalid JWT from socket ${socket.id}:`, err.message);
+        socket.emit('auth-error', { message: 'Invalid token' });
+        socket.disconnect(true);
+        return;
+      }
+
+      const user = await User.findById(decoded.id);
       if (!user) {
-        // Token valid but user gone? Treat as guest or error? 
-        // For safety, let's treat as guest so we don't block connections abruptly
-        socket.user = null;
-        socket.userId = `guest-${socket.id}`;
-        socket.userPhone = 'Guest';
-        return next();
+        console.log(`[AUTH] REJECTED: User not found for ID ${decoded.id} from socket ${socket.id}`);
+        socket.emit('auth-error', { message: 'User not found' });
+        socket.disconnect(true);
+        return;
       }
 
+      console.log(`[AUTH] SUCCESS: User ${user._id} (${user.countryCode} ${user.phoneNumber}) authenticated from socket ${socket.id}`);
+      
       socket.user = user;
       socket.userPhone = `${user.countryCode} ${user.phoneNumber}`;
       socket.userId = String(user._id);
+      
+      // Track this socket
+      trackUserSocket(userSockets, socket.userId, socket.id);
+      trackUserSocket(onlineUsersByPhone, socket.userPhone, socket.id);
+      trackUserSocket(onlineUsersById, socket.userId, socket.id);
+      
       return next();
     } catch (err) {
-      console.warn('[socket] auth warning:', err && err.message);
-      // Allow connection even if token fails (client might just have expired token)
-      socket.user = null;
-      socket.userId = `guest-${socket.id}`;
-      socket.userPhone = 'Guest';
-      return next();
+      console.log(`[AUTH] ERROR: Authentication failed for socket ${socket.id}:`, err.message);
+      socket.emit('auth-error', { message: 'Authentication error' });
+      socket.disconnect(true);
     }
   });
 
@@ -773,6 +826,9 @@ function createSocketServer(server, clientOrigin) {
         const roomId = String(meetingId || socket.data.roomId || '');
         const requesterAuthUserId = socket.userId;
 
+        console.log('[BACKEND] request-control received', { meetingId, roomId });
+        console.log('[BACKEND] requester userId:', requesterAuthUserId);
+
         if (!roomId) {
           socket.emit('control-error', { message: 'meetingId is required' });
           return;
@@ -783,86 +839,88 @@ function createSocketServer(server, clientOrigin) {
           return;
         }
 
-        // Validate participant belongs to meeting
-        if (!isUserInMeeting(roomId, requesterAuthUserId)) {
-          socket.emit('control-error', { message: 'Not in meeting' });
-          return;
-        }
-
         const session = await MeetingControlSession.findOne({
           meetingId: roomId,
           isActive: true,
         }).sort({ createdAt: -1 });
-
         if (!session) {
           socket.emit('control-error', { message: 'Host native agent not online' });
           return;
         }
 
-        // NEW FLOW: require host browser approval before notifying native agent
         const hostUserId = String(session.hostUserId);
+        const hostDeviceId = String(session.hostDeviceId);
 
-        console.log('[BACKEND] Broadcast incoming-control-request to meeting:', roomId);
-        io.to(roomId).emit('incoming-control-request', {
+        console.log('[BACKEND] Meeting found', session);
+        console.log('[BACKEND] Emitting remote-access-request to hostDeviceId:', hostDeviceId);
+        console.log('[BACKEND] Bridging meeting request-control to legacy AnyDesk modal event');
+
+        // Emit to native agent device
+        emitToDevice(hostDeviceId, 'remote-access-request', {
+          sessionId: `meeting:${roomId}`,
+          fromUserId: String(requesterAuthUserId),
+          fromDeviceId: String(hostDeviceId),
+          callerName: 'Meeting participant',
           meetingId: roomId,
           hostUserId,
-          requesterUserId: String(requesterAuthUserId),
+          hostDeviceId,
+          requestedByUserId: String(requesterAuthUserId),
+        });
+
+        // Emit to ALL host browser sockets
+        const hostSockets = getUserSockets(hostUserId);
+        if (hostSockets && hostSockets.size > 0) {
+          console.log(`[BACKEND] Emitting to host user ${hostUserId} on ${hostSockets.size} sockets`);
+          let successCount = 0;
+          let failureCount = 0;
+          
+          hostSockets.forEach((socketId) => {
+            const targetSocket = ioInstance.sockets.sockets.get(socketId);
+            if (targetSocket) {
+              targetSocket.emit('remote-access-request', {
+                sessionId: `meeting:${roomId}`,
+                fromUserId: String(requesterAuthUserId),
+                fromDeviceId: String(hostDeviceId),
+                callerName: 'Meeting participant',
+                meetingId: roomId,
+                hostUserId,
+                hostDeviceId,
+                requestedByUserId: String(requesterAuthUserId),
+              });
+              successCount++;
+              console.log(`[BACKEND] Emitted to host socket ${socketId}`);
+            } else {
+              failureCount++;
+              console.log(`[BACKEND] Failed to emit to host socket ${socketId} - socket not found`);
+            }
+          });
+          
+          console.log(`[BACKEND] Emit summary: ${successCount} success, ${failureCount} failures`);
+        } else {
+          console.log(`[BACKEND] No host sockets found for user ${hostUserId}`);
+        }
+
+        // Also emit to device (existing behavior preserved)
+        emitToDevice(hostDeviceId, 'request-control', {
+          meetingId: roomId,
+          hostUserId,
+          hostDeviceId,
+          requestedByUserId: String(requesterAuthUserId),
+        });
+
+        emitToDevice(hostDeviceId, 'remote-access-request', {
+          sessionId: `meeting:${roomId}`,
+          fromUserId: String(requesterAuthUserId),
+          fromDeviceId: String(hostDeviceId),
+          callerName: 'Meeting participant',
+          meetingId: roomId,
+          hostUserId,
+          hostDeviceId,
+          requestedByUserId: String(requesterAuthUserId),
         });
       } catch (err) {
         console.error('[request-control] error:', err && err.message);
         socket.emit('control-error', { message: err.message || 'request-control failed' });
-      }
-    });
-
-    // Host approves a pending meeting-native control request
-    socket.on('approve-control-request', async ({ meetingId, requesterUserId }) => {
-      try {
-        const roomId = String(meetingId || socket.data.roomId || '');
-        if (!roomId) return;
-
-        const hostAuthUserId = socket.userId;
-        if (!hostAuthUserId || String(hostAuthUserId).startsWith('guest-')) return;
-
-        const session = await MeetingControlSession.findOne({
-          meetingId: roomId,
-          isActive: true,
-        }).sort({ createdAt: -1 });
-
-        if (!session) {
-          socket.emit('control-error', { message: 'Host native agent not online' });
-          return;
-        }
-
-        if (String(session.hostUserId) !== String(hostAuthUserId)) {
-          socket.emit('control-error', { message: 'Only host can approve control requests' });
-          return;
-        }
-
-        const hostDeviceId = String(session.hostDeviceId);
-        console.log('[BACKEND] Host approved. Emitting remote-access-request to agent', hostDeviceId);
-
-        emitToDevice(hostDeviceId, 'remote-access-request', {
-          meetingId: roomId,
-          hostUserId: String(session.hostUserId),
-          hostDeviceId,
-          requestedByUserId: requesterUserId ? String(requesterUserId) : undefined,
-        });
-      } catch (err) {
-        console.error('[approve-control-request] error:', err && err.message);
-      }
-    });
-
-    // Host rejects a pending meeting-native control request
-    socket.on('reject-control-request', ({ meetingId, requesterUserId }) => {
-      try {
-        const roomId = String(meetingId || socket.data.roomId || '');
-        if (!roomId || !requesterUserId) return;
-        io.to(roomId).emit('control-request-rejected', {
-          meetingId: roomId,
-          requesterUserId: String(requesterUserId),
-        });
-      } catch (err) {
-        console.error('[reject-control-request] error:', err && err.message);
       }
     });
 

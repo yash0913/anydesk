@@ -14,6 +14,8 @@ import MeetingChatPanel from './MeetingChatPanel.jsx';
 import { MeetingRemoteControlProvider, useMeetingRemoteControl } from './meetingRemoteControlContext.jsx';
 import RemoteVideoArea from '../../modules/desklink/components/RemoteVideoArea.jsx';
 import IncomingRequestModal from '../../modules/desklink/components/IncomingRequestModal.jsx';
+import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
+import { getSocket } from '../../socket.js';
 import { MousePointer2 } from 'lucide-react';
 import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
 
@@ -32,6 +34,17 @@ function VideoRoomInner({
   localStream: externalStream,
   onLeave,
 }) {
+  const derivedLocalAuthUserId = (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('vd_user_profile') : null;
+      if (!raw) return null;
+      const profile = JSON.parse(raw);
+      return profile?.id ? String(profile.id) : null;
+    } catch {
+      return null;
+    }
+  })();
+
   const userId = React.useMemo(() => crypto.randomUUID(), []);
   const [isChatOpen, setIsChatOpen] = React.useState(false);
   const [isParticipantsOpen, setIsParticipantsOpen] = React.useState(false);
@@ -87,7 +100,17 @@ function VideoRoomInner({
     acceptIncomingRequest,
     rejectIncomingRequest,
     checkUserAgentStatus, // Exported from context
+    meetingSocketReady, // Exported from context
   } = useMeetingRemoteControl();
+
+  // Listen for AnyDesk-style incoming request modal on host browser
+  const { socket: desklinkSocket } = useDeskLinkSocket({
+    token: derivedLocalAuthUserId,
+    onRemoteRequest: React.useCallback((payload) => {
+      console.log('[HOST BROWSER] AnyDesk modal trigger received', payload);
+      setIncomingRequest(payload);
+    }, []),
+  });
 
   // Debug logging for remote desktop
   useEffect(() => {
@@ -321,19 +344,11 @@ function VideoRoomInner({
     });
   }, [allParticipants, userId]);
 
-  // Build controller candidates: all non-local participants, with a best-effort
-  // mapping to a backend user id (authUserId). We do NOT hide the UI when the
-  // mapping is missing; instead we mark those entries as non-actionable so the
-  // developer can see them and understand why the Request button is disabled.
+  // Build controller candidates: all non-local participants (allow guests to request control)
   const controllerCandidates = React.useMemo(
     () =>
       (allParticipants || [])
-        .filter((p) => p.id !== userId)
-        .map((p) => ({
-          ...p,
-          targetUserId: p.authUserId ? String(p.authUserId) : null,
-          hasBackendUser: !!p.authUserId,
-        })),
+        .filter((p) => p.id !== userId),
     [allParticipants, userId]
   );
 
@@ -417,49 +432,6 @@ function VideoRoomInner({
 
   return (
     <div className="flex flex-col w-full h-screen bg-slate-950 text-white overflow-hidden relative">
-      {showControlModal && incomingControlRequest && (
-        <div className="pointer-events-auto absolute inset-0 z-[60] flex items-center justify-center bg-black/60">
-          <div className="w-[420px] max-w-[92vw] rounded-xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-              <div className="text-sm font-semibold">Remote Control Request</div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowControlModal(false);
-                  setIncomingControlRequest(null);
-                }}
-                className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded border border-slate-700 hover:border-slate-500"
-              >
-                Close
-              </button>
-            </div>
-            <div className="px-4 py-4 text-xs text-slate-200 space-y-3">
-              <div>
-                A participant requested control of your PC.
-              </div>
-              <div className="text-[11px] text-slate-400 break-all">
-                Requester: {String(incomingControlRequest.requesterUserId || '')}
-              </div>
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={rejectControlRequest}
-                  className="text-xs px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-white"
-                >
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  onClick={approveControlRequest}
-                  className="text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
-                >
-                  Accept
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="absolute top-4 right-4 z-50 pointer-events-auto">
         <button
           type="button"
@@ -650,8 +622,15 @@ function VideoRoomInner({
                         <div className="flex flex-col items-end gap-0.5">
                           <button
                             className="bg-blue-500 text-white px-3 py-1 rounded disabled:opacity-50"
-                            disabled={!isAgentOnline}
-                            onClick={() => requestControl()}
+                            disabled={!isAgentOnline || !meetingSocketReady}
+                            onClick={() => {
+                              if (!meetingSocketReady) {
+                                console.warn('[VideoRoom] Request Control clicked but meetingSocket not ready yet');
+                                return;
+                              }
+                              console.log('[VideoRoom] Request Control clicked');
+                              requestControl();
+                            }}
                           >
                             Request Control
                           </button>

@@ -1,10 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-
 import { desklinkApi } from '../../modules/desklink/services/desklink.api.js';
-
 import { useAuth } from '../../modules/auth/hooks/useAuth.js';
-
-
+import { getSocket } from '../../socket.js';
 
 const MeetingRemoteControlContext = createContext(null);
 
@@ -38,7 +35,27 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
 
 
 
-  const meetingSocket = typeof window !== 'undefined' ? window.__meetingSocket : null;
+  const [meetingSocket, setMeetingSocket] = useState(null);
+
+  // Wait for global socket to become available, then bind listeners
+  useEffect(() => {
+    if (!meetingId) return;
+    
+    const initializeSocket = async () => {
+      try {
+        const socket = await getSocket(token);
+        setMeetingSocket(socket);
+        console.log('[MEETING] Global socket resolved and listeners bound', {
+          meetingId,
+          socketId: socket.id,
+        });
+      } catch (err) {
+        console.error('[MEETING] Failed to initialize socket:', err);
+      }
+    };
+
+    initializeSocket();
+  }, [meetingId, token]);
 
 
 
@@ -212,26 +229,24 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
   }, [meetingSocket, meetingId, stopSession]);
 
 
-
-
   // Meeting remote control: request backend to start control session.
 
-  const requestControl = useCallback(() => {
+  const requestControl = useCallback(async () => {
+    if (!meetingSocket) {
+      console.warn('[FRONTEND] requestControl called but meetingSocket not ready yet');
+      return;
+    }
 
-    if (!meetingSocket) return;
-
-    if (!meetingId) return;
+    if (!meetingId) {
+      console.warn('[FRONTEND] requestControl called but meetingId missing');
+      return;
+    }
 
     console.log('[FRONTEND] Emitting request-control', meetingId);
-
     meetingSocket.emit('request-control', { meetingId });
-
   }, [meetingSocket, meetingId]);
 
-
-
-
-
+// ... (rest of the code remains the same)
   const checkUserAgentStatus = useCallback(async () => {
     return 'unknown';
   }, []);
@@ -303,87 +318,63 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
       }
 
     },
-
     [incomingRequest, token]
-
   );
 
-
-
   const value = {
-
     // UI state
-
     isPanelOpen,
-
     openPanel,
-
     closePanel,
-
     togglePanel,
 
 
 
     // Session state
-
     sessionConfig,
-
     beginControl,
-
     endControl,
 
 
 
     // Incoming owner-side request (for future in-meeting modal)
-
     incomingRequest,
-
     acceptIncomingRequest,
-
     rejectIncomingRequest,
 
 
 
     // Permissions (owner controls)
-
     permissions,
-
     setPermissions,
 
 
 
     // Request flow from controller side
-
     requestControl,
-
     checkUserAgentStatus,
 
 
 
     // WebRTC state for remote desktop
-
     connectionState,
-
     iceConnectionState,
-
     remoteStream,
-
     stats,
-
     sendControlMessage,
-
     setOnDataMessage,
-
     setOnConnected,
-
     setOnDisconnected,
 
+
+
+    // Expose socket readiness for UI guards
+    meetingSocketReady: !!meetingSocket,
   };
 
 
 
   return (
-
     <MeetingRemoteControlContext.Provider value={value}>
 
       {children}
