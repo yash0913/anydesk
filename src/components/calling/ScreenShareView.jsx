@@ -1,6 +1,7 @@
 import React from 'react';
 import ScreenShareTile from './ScreenShareTile.jsx';
 import ParticipantTile from './ParticipantTile.jsx';
+import RemoteVideoArea from '../../modules/desklink/components/RemoteVideoArea.jsx';
 
 export default function ScreenShareView({
   screenStream,
@@ -8,21 +9,42 @@ export default function ScreenShareView({
   participants,
   localUserId,
   activeSpeakerId,
+  onControlMessage,
+  sessionId,
+  sessionToken,
+  permissions,
+  stats,
 }) {
   if (!screenStream) {
     return null;
   }
 
+  // Check if this is remote desktop (presenter name is 'Remote Desktop')
+  const isRemoteDesktop = presenter?.name === 'Remote Desktop';
+
   return (
     <div className="flex h-full">
       {/* Main screen share area - takes up 85% of width */}
       <div className="flex-[0.85] relative bg-black">
-        <ScreenShareTile
-          screenStream={screenStream}
-          presenterName={presenter?.name || 'Presenter'}
-          isLocal={presenter?.id === localUserId}
-          fullWidth={true}
-        />
+        {isRemoteDesktop ? (
+          // Use RemoteVideoArea for remote desktop (has mouse/keyboard control)
+          <RemoteVideoArea
+            stream={screenStream}
+            onControlMessage={onControlMessage}
+            sessionId={sessionId}
+            token={sessionToken}
+            permissions={permissions}
+            stats={stats}
+          />
+        ) : (
+          // Use ScreenShareTile for regular screen share
+          <ScreenShareTile
+            screenStream={screenStream}
+            presenterName={presenter?.name || 'Presenter'}
+            isLocal={presenter?.id === localUserId}
+            fullWidth={true}
+          />
+        )}
 
         {/* Presenter camera as small floating window in bottom right */}
         {presenter && presenter.videoStream && (

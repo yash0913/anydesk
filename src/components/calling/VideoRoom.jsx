@@ -209,6 +209,9 @@ function VideoRoomInner({
 
 
 
+  // STEP 2: Add derived state for remote desktop
+  const isRemoteDesktopActive = !!remoteDesktopStream;
+
   // Debug logging for remote desktop
 
   useEffect(() => {
@@ -1206,8 +1209,8 @@ function VideoRoomInner({
 
 
       {/* In-Meeting Remote Control Panel (VisionDesk Control Mode) */}
-
-      {isRemoteControlOpen && (
+      {/* HIDE when remote desktop is active in main stage */}
+      {isRemoteControlOpen && !isRemoteDesktopActive && (
 
         <div className="pointer-events-auto absolute bottom-28 right-6 z-40 w-[420px] max-w-[90vw]">
 
@@ -1561,21 +1564,32 @@ function VideoRoomInner({
 
         <div className={isChatOpen ? 'flex-1 overflow-hidden' : 'flex-1 overflow-hidden'}>
 
-          {hasScreenShare && activeScreenShareStream ? (
+          {(hasScreenShare && activeScreenShareStream) || isRemoteDesktopActive ? (
 
             // Screen Share Layout: Large screen on left, participants on right
+            // Remote Desktop Layout: Large desktop on left, participants on right
 
             <ScreenShareView
 
-              screenStream={activeScreenShareStream}
+              screenStream={activeScreenShareStream || remoteDesktopStream}
 
-              presenter={screenShareParticipant}
+              presenter={screenShareParticipant || { name: 'Remote Desktop' }}
 
               participants={allParticipants}
 
               localUserId={userId}
 
               activeSpeakerId={activeSpeakerId}
+
+              onControlMessage={sendControlMessage}
+
+              sessionId={sessionConfig?.sessionId || ''}
+
+              sessionToken={sessionConfig?.sessionToken || ''}
+
+              permissions={permissions}
+
+              stats={remoteStats}
 
             />
 
