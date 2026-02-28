@@ -141,21 +141,6 @@ function createSocketServer(server, clientOrigin) {
 
   ioInstance = io;
 
-  // Expose debug endpoint
-  io.use('/debug', (req, res, next) => {
-    if (req.method !== 'GET') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    try {
-      const { getSocketState } = require('./debug-endpoint');
-      const state = getSocketState();
-      res.json(state);
-    } catch (err) {
-      console.error('[DEBUG] Error generating socket state:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
 
   // Store room data for meetings
   const rooms = new Map(); // Map<roomId, Map<userId, {socketId, userName, isHost}>>
