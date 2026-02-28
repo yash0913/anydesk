@@ -1,25 +1,47 @@
 import { useEffect, useState } from "react";
-import { anydeskSocket } from "./anydeskSocket";
+import { getSocket } from "../socket";
+import { useAuth } from "../modules/auth/hooks/useAuth";
 
 export function useAnyDesk(roomId) {
   const [connected, setConnected] = useState(false);
   const [remoteStream, setRemoteStream] = useState(null);
+  const { token } = useAuth();
+
+  const socketRef = useRef(null);
+  const handlersRef = useRef(null);
 
   useEffect(() => {
-    anydeskSocket.emit("anydesk:join", { roomId });
+    if (!token || !roomId) return;
 
-    anydeskSocket.on("anydesk:connected", () => {
-      setConnected(true);
-    });
+    let active = true;
+    let cleanupSocket = null;
 
-    anydeskSocket.on("anydesk:stream", (stream) => {
-      setRemoteStream(stream);
+    const onConnected = () => setConnected(true);
+    const onStream = (stream) => setRemoteStream(stream);
+
+    getSocket(token).then(s => {
+      if (!active) return;
+      socketRef.current = s;
+      cleanupSocket = s;
+      handlersRef.current = { onConnected, onStream };
+
+      s.emit("anydesk:join", { roomId });
+      s.on("anydesk:connected", onConnected);
+      s.on("anydesk:stream", onStream);
     });
 
     return () => {
-      anydeskSocket.emit("anydesk:leave", { roomId });
+      active = false;
+      const s = cleanupSocket || socketRef.current;
+      const h = handlersRef.current;
+      if (s && h) {
+        s.emit("anydesk:leave", { roomId });
+        s.off("anydesk:connected", h.onConnected);
+        s.off("anydesk:stream", h.onStream);
+      }
+      socketRef.current = null;
     };
-  }, [roomId]);
+  }, [roomId, token]);
 
   return { connected, remoteStream };
 }

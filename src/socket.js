@@ -8,7 +8,9 @@ import { io } from 'socket.io-client';
 
 let globalSocket = null;
 let connectionAttempts = 0;
-const MAX_CONNECTION_ATTEMPTS = 3;
+let pendingConnectPromise = null;
+let webDeviceRegistered = false; // Prevent duplicate registrations
+const MAX_CONNECTION_ATTEMPTS = 5; // Increased slightly for better reliability
 
 /**
  * Get or create the global socket instance
@@ -16,42 +18,81 @@ const MAX_CONNECTION_ATTEMPTS = 3;
  * @returns {Promise<Socket>} Socket instance
  */
 export function getSocket(token) {
-  return new Promise((resolve, reject) => {
-    // If socket already exists and is connected, return it
-    if (globalSocket && globalSocket.connected) {
-      console.log('[SOCKET] Reusing existing socket:', globalSocket.id);
-      resolve(globalSocket);
-      return;
-    }
+  // If socket already exists and is connected, return it
+  if (globalSocket && globalSocket.connected) {
+    console.log('[SOCKET] Reusing existing connected socket:', globalSocket.id);
+    return Promise.resolve(globalSocket);
+  }
 
-    // Prevent infinite connection attempts
-    if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
-      console.error('[SOCKET] Max connection attempts reached');
-      reject(new Error('Max connection attempts'));
-      return;
-    }
+  // If there's already a connection attempt in progress, return that same promise
+  if (pendingConnectPromise) {
+    console.log('[SOCKET] Joining existing connection attempt');
+    return pendingConnectPromise;
+  }
 
+  // Prevent infinite connection attempts if we're truly stuck
+  if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+    console.error('[SOCKET] Max connection attempts reached. Resetting counter to allow fresh manual trigger.');
+    // We reset the counter here so that a SUBSEQUENT call (likely after a user action or token change) can try again.
+    // This fixed the "permanent lockout" bug.
+    connectionAttempts = 0;
+  }
+
+  pendingConnectPromise = new Promise((resolve, reject) => {
     connectionAttempts++;
     console.log(`[SOCKET] Connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
 
     // Create new socket with auth
-    const socket = io(process.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com', {
+    const socket = io(import.meta.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com', {
       auth: { token },
       transports: ['websocket', 'polling'],
+      reconnectionAttempts: 3,
+      timeout: 10000,
     });
 
     // Connection event handlers
     socket.on('connect', () => {
-      console.log(`[SOCKET] Connected with ID: ${socket.id}`);
-      console.log(`[SOCKET] Authenticated as: ${socket.auth?.token ? 'YES' : 'NO'}`);
+      console.log(`[SOCKET-DIAG] socket.connect fires with ID: ${socket.id}`);
+      console.log(`[SOCKET-DIAG] Authenticated as: ${socket.auth?.token ? 'YES' : 'NO'}`);
       globalSocket = socket;
       connectionAttempts = 0; // Reset on successful connection
+      pendingConnectPromise = null;
+      
+      // Register web client device for signaling routing (only once)
+      if (socket.auth?.token && !webDeviceRegistered) {
+        try {
+          // Extract user ID from JWT token (simple approach)
+          const tokenParts = socket.auth.token.split('.');
+          if (tokenParts.length === 3) {
+            const payload = JSON.parse(atob(tokenParts[1]));
+            const userId = payload.id;
+            
+            if (userId) {
+              const webDeviceId = `web-${userId}`;
+              socket.emit('register-device', {
+                deviceId: webDeviceId,
+                userId: userId,
+                type: 'web'
+              });
+              console.log(`[SOCKET] Registered web device: ${webDeviceId}`);
+              webDeviceRegistered = true;
+            }
+          }
+        } catch (err) {
+          console.warn('[SOCKET] Failed to register web device:', err.message);
+        }
+      }
+      
       resolve(socket);
     });
 
     socket.on('connect_error', (err) => {
-      console.error(`[SOCKET] Connection error:`, err);
+      console.error(`[SOCKET-DIAG] socket.connect_error fires:`, err.message);
+
+      // Don't reject immediately on first connect_error if Socket.IO is still retrying internally
+      // But if we've hit our own wrapping limit, fail the promise
       if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+        pendingConnectPromise = null;
         reject(err);
       }
     });
@@ -59,16 +100,21 @@ export function getSocket(token) {
     socket.on('disconnect', (reason) => {
       console.log(`[SOCKET] Disconnected: ${reason}`);
       globalSocket = null;
+      pendingConnectPromise = null;
+      webDeviceRegistered = false; // Reset flag for next connection
     });
 
-    // Set timeout for connection
+    // Set fallback timeout for the promise itself
     setTimeout(() => {
-      if (!globalSocket || !globalSocket.connected) {
-        console.error('[SOCKET] Connection timeout');
+      if (pendingConnectPromise && (!globalSocket || !globalSocket.connected)) {
+        console.error('[SOCKET] Connection timeout inside getSocket wrapper');
+        pendingConnectPromise = null;
         reject(new Error('Connection timeout'));
       }
-    }, 10000);
+    }, 15000);
   });
+
+  return pendingConnectPromise;
 }
 
 /**

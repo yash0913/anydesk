@@ -1,9 +1,8 @@
 // useDeskLinkWebRTC.js - FULLY FIXED VERSION
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { io } from 'socket.io-client';
+import { getSocket } from '../../../socket.js';
 
 // Local-first signaling endpoint; override with VITE_SOCKET_URL if desired.
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com';
 const TURN_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -206,7 +205,7 @@ export function useDeskLinkWebRTC() {
           }
 
           console.log('[WebRTC] Sending local ICE candidate with token');
-          
+
           const icePayload = {
             sessionId,
             fromUserId: localUserId,
@@ -224,7 +223,7 @@ export function useDeskLinkWebRTC() {
       // ✅ CALLER: Create datachannel IMMEDIATELY
       if (role === 'caller') {
         console.log('[WebRTC] Creating datachannel (CALLER)...');
-        
+
         const dc = pc.createDataChannel('desklink-control', {
           ordered: true,
           maxRetransmits: 3,
@@ -319,7 +318,7 @@ export function useDeskLinkWebRTC() {
         console.log('[WebRTC] sessionToken length:', sessionToken?.length);
         console.log('[WebRTC] sessionToken type:', typeof sessionToken);
         console.log('[WebRTC] sessionToken full value:', sessionToken);
-        
+
         if (!sessionToken) {
           throw new Error('CRITICAL: sessionToken is missing in startAsCaller config!');
         }
@@ -332,59 +331,30 @@ export function useDeskLinkWebRTC() {
           remoteDeviceId,
           role: 'caller',
         };
-        
+
         console.log('[WebRTC] ===== SESSION STORED IN REF =====');
         console.log('[WebRTC] sessionRef.current.sessionToken preview:', sessionRef.current.sessionToken?.substring(0, 50));
         console.log('[WebRTC] sessionRef.current.sessionToken type:', typeof sessionRef.current.sessionToken);
         console.log('[WebRTC] sessionRef.current full:', sessionRef.current);
 
-        // ✅ CRITICAL FIX: Setup socket and WAIT for it to connect before creating offer
+        // ✅ Shared Socket Strategy: Always use getSocket(token)
         let socket;
         const socketReady = new Promise((resolve, reject) => {
-          if (typeof window !== 'undefined' && window.__desklinkSocket) {
-            socket = window.__desklinkSocket;
-            console.log('[WebRTC] Using shared socket id=', socket.id);
-            if (socket.connected) {
-              resolve();
-            } else {
-              const onConnect = () => {
-                socket.off('connect', onConnect);
-                resolve();
-              };
-              socket.on('connect', onConnect);
-            }
-          } else {
-            console.log('[WebRTC] Creating new socket connection...');
-            socket = io(SOCKET_URL, {
-              auth: { token: authToken },
-              transports: ['websocket'],
-            });
-
-            const onLocalConnect = () => {
-              console.log('[WebRTC] Socket connected', socket.id);
-              socket.off('connect', onLocalConnect);
-              // Wait a bit after register to ensure server processes it
-              setTimeout(() => resolve(), 300);
-            };
-            
-            socket.on('connect', onLocalConnect);
-            attachedSocketListenersRef.current.localConnect = onLocalConnect;
-
-            socket.on('connect_error', (err) => {
-              console.error('[WebRTC] Socket error:', err?.message || err);
-              reject(err);
-            });
-
-            // Timeout after 10 seconds
-            setTimeout(() => reject(new Error('Socket connection timeout')), 10000);
-          }
+          console.log('[WebRTC] Fetching shared global socket...');
+          getSocket(authToken).then(s => {
+            socket = s;
+            console.log('[WebRTC] Shared global socket ready id=', s.id);
+            resolve();
+          }).catch(err => {
+            console.error('[WebRTC] Failed to get global socket:', err);
+            reject(err);
+          });
         });
-
-        socketRef.current = socket;
 
         // WAIT for socket to be fully ready
         console.log('[WebRTC] Waiting for socket to be ready...');
         await socketReady;
+        socketRef.current = socket;
         console.log('[WebRTC] Socket ready, proceeding with WebRTC setup');
 
         // Answer handler
@@ -396,7 +366,7 @@ export function useDeskLinkWebRTC() {
               console.warn('[WebRTC] PC missing when answer received');
               return;
             }
-            
+
             console.log('[WebRTC] Setting remote description (answer)...');
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
             console.log('[WebRTC] Remote description set (answer)');
@@ -463,7 +433,7 @@ export function useDeskLinkWebRTC() {
           offerToReceiveVideo: true,
           offerToReceiveAudio: false,
         });
-        
+
         await pc.setLocalDescription(offer);
         console.log('[WebRTC] Local description set (offer)');
 
@@ -487,7 +457,7 @@ export function useDeskLinkWebRTC() {
         console.log('[WebRTC] Sending offer to', remoteDeviceId, 'with token present:', !!sessionToken);
         console.log('[WebRTC] Token being sent (first 50 chars):', sessionToken?.substring(0, 50));
         console.log('[WebRTC] Token type:', typeof sessionToken);
-        
+
         const offerPayload = {
           sessionId,
           fromUserId: localUserId,
@@ -496,7 +466,7 @@ export function useDeskLinkWebRTC() {
           sdp: offer.sdp,
           token: sessionToken,
         };
-        
+
         console.log('[WebRTC] Offer payload token preview:', offerPayload.token?.substring(0, 50));
         socket.emit('webrtc-offer', offerPayload);
 
@@ -531,15 +501,10 @@ export function useDeskLinkWebRTC() {
           role: 'receiver',
         };
 
-        const socket = io(SOCKET_URL, {
-          auth: { token: authToken },
-          transports: ['websocket'],
-        });
+        const socket = await getSocket(authToken);
         socketRef.current = socket;
 
-        socket.on('connect', () => {
-          console.log('[WebRTC] (receiver) socket connected', socket.id);
-        });
+        console.log('[WebRTC] (receiver) using shared socket', socket.id);
 
         socket.on('webrtc-ice', async ({ candidate, sessionId: sid }) => {
           try {
@@ -634,14 +599,14 @@ export function useDeskLinkWebRTC() {
     if (dataChannelRef.current) {
       try {
         dataChannelRef.current.close();
-      } catch {}
+      } catch { }
       dataChannelRef.current = null;
     }
 
     if (pcRef.current) {
       try {
         pcRef.current.close();
-      } catch {}
+      } catch { }
       pcRef.current = null;
     }
 
@@ -664,21 +629,7 @@ export function useDeskLinkWebRTC() {
           });
         }
 
-        // ---- Start replacement (useDeskLinkWebRTC.js) ----
-        const globalSocket = (typeof window !== 'undefined') ? window.__desklinkSocket : null;
-        const isSharedSocket = globalSocket && globalSocket === socketRef.current;
-        if (!isSharedSocket && socketRef.current) {
-          try {
-            console.log('[WebRTC] stopSession: disconnecting local socket (not shared)');
-            socketRef.current.disconnect();
-          } catch (e) {
-            console.warn('[WebRTC] stopSession: error disconnecting socket', e);
-          }
-        } else {
-          console.log('[WebRTC] stopSession: socket is shared — leaving it connected');
-        }
-        // ---- End replacement ----
-
+        console.log('[WebRTC] stopSession: detached listeners from shared socket');
       } catch (e) {
         console.warn('[WebRTC] Socket cleanup error', e);
       }
@@ -688,7 +639,7 @@ export function useDeskLinkWebRTC() {
     if (remoteStreamRef.current) {
       try {
         remoteStreamRef.current.getTracks().forEach((t) => t.stop());
-      } catch {}
+      } catch { }
       remoteStreamRef.current = null;
     }
 

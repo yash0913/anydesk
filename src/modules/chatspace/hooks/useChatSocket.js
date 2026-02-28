@@ -1,35 +1,45 @@
 import { useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com';
+import { getSocket } from '../../../socket.js';
 
 export function useChatSocket({ token, onMessage }) {
   const socketRef = useRef(null);
+  const onMessageRef = useRef(onMessage);
+  const attachedSocketListenerRef = useRef(null);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   useEffect(() => {
     if (!token) return;
 
-    const socket = io(SOCKET_URL, {
-      auth: { token },
-      transports: ['websocket'],
-    });
-
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      console.log('[socket] connected', socket.id);
-    });
-
-    socket.on('private-message', (msg) => {
+    const handlePrivateMessage = (msg) => {
       console.log('[socket] private-message received', msg);
-      onMessage?.(msg);
+      onMessageRef.current?.(msg);
+    };
+
+    let active = true;
+    let cleanupSocket = null;
+
+    getSocket(token).then(socket => {
+      if (!active) return;
+      socketRef.current = socket;
+      cleanupSocket = socket;
+      socket.on('private-message', handlePrivateMessage);
+      attachedSocketListenerRef.current = handlePrivateMessage;
+    }).catch(err => {
+      console.error('[useChatSocket] Failed to get global socket:', err);
     });
 
     return () => {
-      socket.disconnect();
+      active = false;
+      const s = cleanupSocket || socketRef.current;
+      if (s && attachedSocketListenerRef.current) {
+        s.off('private-message', attachedSocketListenerRef.current);
+      }
       socketRef.current = null;
     };
-  }, [token, onMessage]);
+  }, [token]);
 
   const sendMessage = (toPhone, text) => {
     if (!socketRef.current) return;
