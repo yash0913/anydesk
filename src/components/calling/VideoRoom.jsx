@@ -35,8 +35,6 @@ import { getSocket } from '../../socket.js';
 import { MousePointer2 } from 'lucide-react';
 
 import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
-import { RemoteAccessProvider } from "./RemoteAccessContext.jsx";
-import { useRemoteAccess } from "./RemoteAccessContext.jsx";
 
 
 
@@ -176,37 +174,6 @@ function VideoRoomInner({
 
   } = useRoomClient(roomId, userId, userName, isHost, onLeave, derivedLocalAuthUserId);
 
-  // Use centralized remote access state
-  const {
-    currentController,
-    pendingRequests,
-    hostOverride,
-    requestAccess,
-    acceptRequest,
-    rejectRequest,
-    revokeAccess,
-    switchAccess,
-    setParticipants,
-    hasControl,
-    isController
-  } = useRemoteAccess();
-
-  // Update participants list when it changes
-  useEffect(() => {
-    setParticipants(allParticipants);
-  }, [allParticipants, setParticipants]);
-
-  // Debug logs to track state updates
-  useEffect(() => {
-    console.log('[RemoteAccess] TOP PANEL STATE UPDATE:', {
-      currentController,
-      pendingRequests,
-      hostOverride,
-      hasControl,
-      isController
-    });
-  }, [currentController, pendingRequests, hostOverride, hasControl, isController]);
-
 
 
   const {
@@ -290,6 +257,10 @@ function VideoRoomInner({
 
 
   const [isAccessPanelOpen, setIsAccessPanelOpen] = React.useState(false);
+
+  const [currentController, setCurrentController] = React.useState(null);
+  const [pendingRequests, setPendingRequests] = React.useState([]);
+  const [hostOverride, setHostOverride] = React.useState(null);
 
   const [accessStateByOwner, setAccessStateByOwner] = React.useState({});
 
@@ -406,22 +377,24 @@ function VideoRoomInner({
 
 
   const myAccessState = React.useMemo(() => {
-
+    // Use the new state structure first
+    if (currentController !== undefined || pendingRequests !== undefined) {
+      return {
+        ownerId: localAuthUserId,
+        activeController: currentController,
+        pendingRequests: pendingRequests,
+      };
+    }
+    
+    // Fallback to old structure
     if (!localAuthUserId) return { ownerId: null, activeController: null, pendingRequests: [] };
-
     const mine = accessStateByOwner[String(localAuthUserId)] || null;
-
     return {
-
       ownerId: localAuthUserId,
-
       activeController: mine ? mine.activeController || null : null,
-
       pendingRequests: mine && Array.isArray(mine.pendingRequests) ? mine.pendingRequests : [],
-
     };
-
-  }, [accessStateByOwner, localAuthUserId]);
+  }, [accessStateByOwner, localAuthUserId, currentController, pendingRequests]);
 
 
 
@@ -433,30 +406,50 @@ function VideoRoomInner({
 
 
 
+    const handleRemoteAccessStateUpdate = (data) => {
+      if (!data || String(data.meetingId || '') !== String(roomId)) return;
+      
+      console.log('[VideoRoom] Remote access state update:', data);
+      
+      setCurrentController(data.currentController);
+      setPendingRequests(Array.isArray(data.pendingRequests) ? data.pendingRequests : []);
+      setHostOverride(data.hostOverride);
+      
+      // Also update the old structure for backward compatibility
+      if (localAuthUserId) {
+        const ownerId = String(localAuthUserId);
+        setAccessStateByOwner((prev) => ({
+          ...prev,
+          [ownerId]: {
+            ownerId,
+            activeController: data.currentController || null,
+            pendingRequests: Array.isArray(data.pendingRequests) ? data.pendingRequests : [],
+          },
+        }));
+      }
+    };
+
     const handleAccessState = (payload) => {
-
       if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
       if (!payload.ownerId) return;
 
       const ownerId = String(payload.ownerId);
-
+      
+      // Update old structure
       setAccessStateByOwner((prev) => ({
-
         ...prev,
-
         [ownerId]: {
-
           ownerId,
-
           activeController: payload.activeController || null,
-
           pendingRequests: Array.isArray(payload.pendingRequests) ? payload.pendingRequests : [],
-
         },
-
       }));
-
+      
+      // Also update new structure if this matches our user
+      if (localAuthUserId && String(localAuthUserId) === String(ownerId)) {
+        setCurrentController(payload.activeController);
+        setPendingRequests(Array.isArray(payload.pendingRequests) ? payload.pendingRequests : []);
+      }
     };
 
 
@@ -539,6 +532,7 @@ function VideoRoomInner({
 
 
 
+    socket.on('remote-access-state-update', handleRemoteAccessStateUpdate);
     socket.on('access-state', handleAccessState);
 
     socket.on('incoming-access-request', handleIncoming);
@@ -552,7 +546,7 @@ function VideoRoomInner({
     socket.on('access-error', handleErr);
 
     return () => {
-
+      socket.off('remote-access-state-update', handleRemoteAccessStateUpdate);
       socket.off('access-state', handleAccessState);
 
       socket.off('incoming-access-request', handleIncoming);
@@ -568,6 +562,81 @@ function VideoRoomInner({
     };
 
   }, [roomId, localAuthUserId]);
+
+
+
+  const requestAccess = React.useCallback(
+    (targetAuthUserId) => {
+      const socket = meetingSocket;
+      if (!socket) return;
+      if (!localAuthUserId || !targetAuthUserId) return;
+      if (String(localAuthUserId) === String(targetAuthUserId)) return;
+
+      setRequestingByTarget((prev) => ({ ...prev, [String(targetAuthUserId)]: true }));
+
+      socket.emit('remote-access-request', {
+        roomId,
+        targetUserId: String(targetAuthUserId),
+      });
+    },
+    [roomId, localAuthUserId]
+  );
+
+
+
+  const acceptRequest = React.useCallback(
+    (requesterAuthUserId) => {
+      const socket = meetingSocket;
+      if (!socket) return;
+      if (!localAuthUserId) return;
+      
+      socket.emit('remote-access-accept', {
+        roomId,
+        targetUserId: String(requesterAuthUserId),
+      });
+    },
+    [roomId, localAuthUserId]
+  );
+
+
+
+  const rejectRequest = React.useCallback(
+    (requesterAuthUserId) => {
+      const socket = meetingSocket;
+      if (!socket) return;
+      if (!localAuthUserId) return;
+      
+      socket.emit('remote-access-reject', {
+        roomId,
+        targetUserId: String(requesterAuthUserId),
+      });
+    },
+    [roomId, localAuthUserId]
+  );
+
+
+
+  const revokeAccess = React.useCallback(() => {
+    const socket = meetingSocket;
+    if (!socket) return;
+    if (!localAuthUserId) return;
+    
+    socket.emit('remote-access-revoke', { roomId });
+  }, [roomId, localAuthUserId]);
+
+  const switchAccess = React.useCallback(
+    (targetUserId) => {
+      const socket = meetingSocket;
+      if (!socket) return;
+      if (!localAuthUserId) return;
+      
+      socket.emit('remote-access-switch', {
+        roomId,
+        targetUserId: String(targetUserId),
+      });
+    },
+    [roomId, localAuthUserId]
+  );
 
 
 
@@ -901,21 +970,21 @@ function VideoRoomInner({
 
               <div className="px-4 pb-4 space-y-2 max-h-[340px] overflow-y-auto">
 
-                {!isHost ? (
+                {String(myAccessState.ownerId || '') !== String(localAuthUserId || '') ? (
 
-                  <div className="text-slate-500 text-xs">You can manage requests only as host.</div>
+                  <div className="text-slate-500 text-xs">You can manage requests only for your own PC.</div>
 
-                ) : pendingRequests.length > 0 ? (
+                ) : myAccessState.pendingRequests && myAccessState.pendingRequests.length > 0 ? (
 
-                  pendingRequests.map((requesterId) => {
+                  myAccessState.pendingRequests.map((r) => {
 
-                    const p = allParticipants.find(p => p.authUserId === requesterId);
+                    const p = participantsByAuthId.get(String(r.userId));
 
-                    const label = (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(requesterId));
+                    const label = (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(r.userId));
 
                     return (
 
-                      <div key={String(requesterId)} className="flex items-center justify-between rounded-md bg-slate-800/70 px-2 py-2">
+                      <div key={String(r.userId)} className="flex items-center justify-between rounded-md bg-slate-800/70 px-2 py-2">
 
                         <div className="text-xs text-slate-100 font-medium">{label}</div>
 
@@ -925,7 +994,7 @@ function VideoRoomInner({
 
                             type="button"
 
-                            onClick={() => acceptRequest(requesterId)}
+                            onClick={() => acceptRequest(String(r.userId))}
 
                             className="text-[10px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
 
@@ -939,7 +1008,7 @@ function VideoRoomInner({
 
                             type="button"
 
-                            onClick={() => rejectRequest(requesterId)}
+                            onClick={() => rejectRequest(String(r.userId))}
 
                             className="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
 
@@ -979,13 +1048,13 @@ function VideoRoomInner({
 
                   <div className="text-sm font-semibold text-slate-100">
 
-                    {currentController
+                    {myAccessState.activeController
 
                       ? (() => {
 
-                        const p = allParticipants.find(p => p.authUserId === currentController);
+                        const p = participantsByAuthId.get(String(myAccessState.activeController));
 
-                        return (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(currentController));
+                        return (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(myAccessState.activeController));
 
                       })()
 
@@ -1001,9 +1070,15 @@ function VideoRoomInner({
 
                       onClick={revokeAccess}
 
-                      disabled={!currentController || !isHost}
+                      disabled={
 
-                      className={`text-xs px-3 py-1.5 rounded-md text-white ${!currentController || !isHost
+                        !myAccessState.activeController ||
+
+                        String(myAccessState.ownerId || '') !== String(localAuthUserId || '')
+
+                      }
+
+                      className={`text-xs px-3 py-1.5 rounded-md text-white ${!myAccessState.activeController || String(myAccessState.ownerId || '') !== String(localAuthUserId || '')
 
                         ? 'bg-slate-700 opacity-50 cursor-not-allowed'
 
@@ -1023,7 +1098,7 @@ function VideoRoomInner({
 
 
 
-                {isHost && (
+                {String(myAccessState.ownerId || '') === String(localAuthUserId || '') && (
 
                   <div className="rounded-md bg-slate-800/50 px-3 py-3">
 
@@ -1031,21 +1106,21 @@ function VideoRoomInner({
 
                     <div className="mt-2 space-y-2 max-h-[180px] overflow-y-auto">
 
-                      {pendingRequests.map((requesterId) => {
+                      {(myAccessState.pendingRequests || []).map((r) => {
 
-                        const p = allParticipants.find(p => p.authUserId === requesterId);
+                        const p = participantsByAuthId.get(String(r.userId));
 
-                        const label = (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(requesterId));
+                        const label = (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(r.userId));
 
                         return (
 
                           <button
 
-                            key={String(requesterId)}
+                            key={String(r.userId)}
 
                             type="button"
 
-                            onClick={() => acceptRequest(requesterId)}
+                            onClick={() => switchAccess(String(r.userId))}
 
                             className="w-full flex items-center justify-between rounded-md bg-slate-900/60 hover:bg-slate-900 px-2 py-2"
 
@@ -1061,7 +1136,7 @@ function VideoRoomInner({
 
                       })}
 
-                      {pendingRequests.length === 0 && (
+                      {(!myAccessState.pendingRequests || myAccessState.pendingRequests.length === 0) && (
 
                         <div className="text-slate-500 text-xs">No pending users.</div>
 
@@ -1203,22 +1278,41 @@ function VideoRoomInner({
 
                         const statusText = isAgentOnline ? 'Ready' : 'Agent Offline';
 
+
+
                         return (
 
-                          <div key={p.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-800/50 border border-slate-700">
+                          <div
 
-                            <div className="flex items-center gap-2">
+                            key={p.id}
 
-                              <div className={`w-2 h-2 rounded-full ${statusColor}`} />
+                            className="flex items-center justify-between rounded-md bg-slate-800/80 px-2 py-1"
 
-                              <span className="text-slate-200">{p.name || p.userName}</span>
+                          >
 
-                              <span className="text-slate-500 text-[10px]">{statusText}</span>
+                            <div className="flex flex-col">
+
+                              <span className="text-[11px] font-medium text-slate-100 flex items-center gap-2">
+
+                                {p.name || 'Participant'}
+
+                                <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} title={statusText}></span>
+
+                              </span>
+
+                              <span className="text-[10px] text-slate-500 break-all">
+
+                                {p.targetUserId ? (
+
+                                  isAgentOnline ? 'Agent Ready' : 'Agent Not Detected'
+
+                                ) : 'Not Registered'}
+
+                              </span>
 
                             </div>
 
-                            <div className="flex items-center gap-2">
-
+                            <div className="flex flex-col items-end gap-0.5">
                               <button
                                 className="bg-blue-500 text-white px-3 py-1 rounded text-[10px] disabled:opacity-50 hover:bg-blue-400"
                                 disabled={!p.targetUserId || !isAgentOnline || !meetingSocketReady}
@@ -1898,48 +1992,16 @@ export default function VideoRoom(props) {
 
 
 
-  // Get socket for RemoteAccessProvider
-  const [socket, setSocket] = React.useState(null);
-
-  React.useEffect(() => {
-    // Get auth token for socket connection
-    const authToken = (() => {
-      try {
-        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('vd_user_profile') : null;
-        if (!raw) return null;
-        const profile = JSON.parse(raw);
-        return profile?.token || null;
-      } catch {
-        return null;
-      }
-    })();
-
-    if (!authToken) return;
-
-    let active = true;
-
-    getSocket(authToken).then(s => {
-      if (!active) return;
-      setSocket(s);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
   return (
+
     <MeetingRemoteControlProvider meetingId={props.roomId} localAuthUserId={derivedLocalAuthUserId}>
-      <RemoteAccessProvider 
-        roomId={props.roomId} 
-        userId={userId || derivedLocalAuthUserId} 
-        isHost={props.isHost}
-        socket={socket}
-      >
-        <VideoRoomInner {...props} />
-        <WebRTCDebugPanel />
-      </RemoteAccessProvider>
+
+      <VideoRoomInner {...props} />
+
+      <WebRTCDebugPanel />
+
     </MeetingRemoteControlProvider>
+
   );
 
 }

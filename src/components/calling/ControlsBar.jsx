@@ -10,7 +10,7 @@ export default function ControlsBar({
   onScreenShare, onLeave, onEndMeeting, participantCount, roomId, isHost = false,
   onToggleParticipants, onToggleChat, onToggleReactions, onToggleHostTools,
   canUseMic = true, canUseCamera = true, isChatDisabled = false,
-  isRemoteControlOpen = false, onToggleRemoteControl
+  isRemoteControlOpen = false, onToggleRemoteControl,
 }) {
 
   // Helper for button styles to keep code clean
