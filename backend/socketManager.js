@@ -369,14 +369,25 @@ function createSocketServer(server, clientOrigin) {
     const byOwner = meetingAccessState.get(roomId);
 
     const state = byOwner ? byOwner.get(String(ownerId)) : null;
-
-    // Emit the new standardized event
-    io.to(roomId).emit('remote-access-state-update', {
+    
+    const stateData = {
       meetingId: roomId,
       currentController: state ? state.activeController : null,
       pendingRequests: state ? state.pendingRequests : [],
-      hostOverride: null // Add this field for future use
-    });
+      hostOverride: null
+    };
+    
+    // Debug: Log sockets in room
+    const roomSockets = io.sockets.adapter.rooms.get(roomId);
+    console.log("[EMITTING STATE]:", stateData, "ROOM:", roomId, "OWNER:", ownerId);
+    console.log("[DEBUG] Sockets in room:", roomSockets ? Array.from(roomSockets) : 'None');
+    
+    // Debug: Log all connected sockets
+    const allSockets = Array.from(io.sockets.sockets.keys());
+    console.log("[DEBUG] All connected sockets:", allSockets);
+
+    // Emit the new standardized event
+    io.to(roomId).emit('remote-access-state-update', stateData);
 
     // Keep the old event for backward compatibility
     io.to(roomId).emit('access-state', {
@@ -2372,17 +2383,13 @@ function createSocketServer(server, clientOrigin) {
 
         }
 
-
+        
 
         const state = getOrInitOwnerState(roomId, ownerAuthId);
 
         state.pendingRequests = state.pendingRequests.filter((r) => String(r.userId) !== String(requesterAuthId));
 
-
-
         console.log(`[Access Rejected] ${getDisplayName(roomId, requesterAuthId)} rejected by ${getDisplayName(roomId, ownerAuthId)}`);
-
-
 
         const payload = {
 
@@ -2393,8 +2400,6 @@ function createSocketServer(server, clientOrigin) {
           requesterId: String(requesterAuthId),
 
         };
-
-
 
         emitToUser(String(requesterAuthId), 'access-rejected', payload);
 
@@ -2409,6 +2414,7 @@ function createSocketServer(server, clientOrigin) {
       }
 
     });
+
 
 
 
@@ -2688,10 +2694,6 @@ function createSocketServer(server, clientOrigin) {
 
     });
 
-
-
-
-
     socket.on('remote-access-accept', ({ roomId, targetUserId }) => {
 
       try {
@@ -2699,134 +2701,73 @@ function createSocketServer(server, clientOrigin) {
         const ownerAuthId = getAuthUserIdForSocket(socket);
 
         const controllerId = String(targetUserId || '');
-
-
-
-
-
-        if (!roomId || !ownerAuthId || !controllerId) {
-
-          socket.emit('access-error', { meetingId: roomId || null, message: 'roomId and targetUserId are required' });
-
+        
+        // Get the room to find the request socket
+        const roomUsers = rooms.get(roomId);
+        if (!roomUsers) {
+          socket.emit('access-error', { meetingId: roomId, message: 'Room not found' });
           return;
-
         }
 
-
-
-
-
-
-
-        if (!isAuthUserInRoom(roomId, ownerAuthId) || !isAuthUserInRoom(roomId, controllerId)) {
-
-          socket.emit('access-error', { meetingId: roomId, message: 'Owner/controller must be in meeting' });
-
-          return;
-
+        // Find the requester's socket
+        let requesterSocket = null;
+        for (const [userId, data] of roomUsers.entries()) {
+          if (data && String(data.authUserId) === String(controllerId)) {
+            requesterSocket = io.sockets.sockets.get(data.socketId);
+            break;
+          }
         }
 
+        if (!requesterSocket) {
+          socket.emit('access-error', { meetingId: roomId, message: 'Requester not found in room' });
+          return;
+        }
 
-
-
-
-
-
+        // Update state
         const state = getOrInitOwnerState(roomId, ownerAuthId);
-
-
-
-
-
-        // remove from pending
-
         state.pendingRequests = state.pendingRequests.filter((r) => String(r.userId) !== String(controllerId));
-
-
-
-
-
+        
         const prev = state.activeController;
-
         if (prev && String(prev) !== String(controllerId)) {
-
           console.log(`[Access Switched] ${getDisplayName(roomId, prev)} → ${getDisplayName(roomId, controllerId)}`);
-
-
-
-
-
+          
           const revokePayload = {
-
             meetingId: roomId,
-
             ownerId: String(ownerAuthId),
-
             revokedControllerId: String(prev),
-
             reason: 'switched',
-
           };
-
-
-
-
-
+          
           io.to(roomId).emit('access-revoked', revokePayload);
-
           emitToUser(String(prev), 'access-revoked', revokePayload);
-
         }
-
-
-
-
-
-
-
+        
         state.activeController = String(controllerId);
-
-
-
-
-
+        
         console.log(`[Access Granted] ${getDisplayName(roomId, controllerId)} now controls ${getDisplayName(roomId, ownerAuthId)}`);
-
-
-
-
-
-        const payload = {
-
+        
+        // Emit to requester using DeskLink events
+        const acceptPayload = {
           meetingId: roomId,
-
           ownerId: String(ownerAuthId),
-
           controllerId: String(controllerId),
-
+          fromUserId: String(ownerAuthId),
+          toUserId: String(controllerId),
+          status: 'accepted',
+          roomId: roomId
         };
-
-
-
-
-
-        io.to(roomId).emit('access-granted', payload);
-
-        emitToUser(String(ownerAuthId), 'access-granted', payload);
-
-        emitToUser(String(controllerId), 'access-granted', payload);
-
-
-
-
-
+        
+        requesterSocket.emit('remote-access-accepted', acceptPayload);
+        requesterSocket.emit('desklink-remote-response', acceptPayload);
+        
+        // Emit to all in room (including host)
+        io.to(roomId).emit('access-granted', {
+          meetingId: roomId,
+          ownerId: String(ownerAuthId),
+          controllerId: String(controllerId),
+        });
+        
         emitAccessState(roomId, ownerAuthId);
-
-
-
-
-
-
 
       } catch (err) {
 
@@ -2835,10 +2776,6 @@ function createSocketServer(server, clientOrigin) {
       }
 
     });
-
-
-
-
 
     socket.on('remote-access-reject', ({ roomId, targetUserId }) => {
 

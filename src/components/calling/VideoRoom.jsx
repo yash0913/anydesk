@@ -16,6 +16,8 @@ import { useMeetingParticipants } from './useMeetingParticipants.js';
 
 import { useScreenShare } from './useScreenShare.js';
 
+import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
+
 import MeetingGrid from './MeetingGrid.jsx';
 
 import ControlBar from './ControlBar.jsx';
@@ -30,8 +32,10 @@ import RemoteVideoArea from '../../modules/desklink/components/RemoteVideoArea.j
 
 import IncomingRequestModal from '../../modules/desklink/components/IncomingRequestModal.jsx';
 
-import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
 import { getSocket } from '../../socket.js';
+
+import { useAuth } from "../../modules/auth/context/AuthContext.jsx";
+
 import { MousePointer2 } from 'lucide-react';
 
 import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
@@ -203,12 +207,57 @@ function VideoRoomInner({
     checkUserAgentStatus, // Exported from context
 
     meetingSocketReady, // Exported from context
+
     meetingSocket, // Exported from context
+
   } = useMeetingRemoteControl();
 
+  // Get auth token for DeskLink socket
+  const { token } = useAuth();
+  
+  // Use the same socket as bottom panel
+  const { socket: deskLinkSocket } = useDeskLinkSocket({
+    token,
+    onRemoteRequest: (payload) => {
+      console.log('[VideoRoom] Remote request received:', payload);
+      // Handle incoming remote access requests
+      if (payload.roomId === roomId) {
+        // Update pending requests
+        setPendingRequests(prev => {
+          const exists = prev.some(r => r.userId === payload.fromUserId);
+          if (!exists) {
+            return [...prev, {
+              userId: payload.fromUserId,
+              requestedAt: Date.now()
+            }];
+          }
+          return prev;
+        });
+      }
+    },
+    onRemoteResponse: (payload) => {
+      console.log('[VideoRoom] Remote response received:', payload);
+      // Handle accept/reject responses
+      if (payload.roomId === roomId) {
+        if (payload.status === 'accepted') {
+          setCurrentController(payload.fromUserId);
+          // Remove from pending
+          setPendingRequests(prev => 
+            prev.filter(r => r.userId !== payload.fromUserId)
+          );
+        } else if (payload.status === 'rejected') {
+          // Remove from pending
+          setPendingRequests(prev => 
+            prev.filter(r => r.userId !== payload.fromUserId)
+          );
+        } else if (payload.status === 'ended') {
+          setCurrentController(null);
+        }
+      }
+    }
+  });
 
-
-
+// ...
   // STEP 2: Add derived state for remote desktop
   const isRemoteDesktopActive = !!remoteDesktopStream;
 
@@ -363,279 +412,98 @@ function VideoRoomInner({
 
 
   const pendingIncomingCount = React.useMemo(() => {
-
-    if (!localAuthUserId) return 0;
-
-    const mine = accessStateByOwner[String(localAuthUserId)];
-
-    const pending = mine && Array.isArray(mine.pendingRequests) ? mine.pendingRequests : [];
-
-    return pending.length;
-
-  }, [accessStateByOwner, localAuthUserId]);
+    // Use the new state structure
+    return pendingRequests ? pendingRequests.length : 0;
+  }, [pendingRequests]);
 
 
 
   const myAccessState = React.useMemo(() => {
-    // Use the new state structure first
-    if (currentController !== undefined || pendingRequests !== undefined) {
-      return {
-        ownerId: localAuthUserId,
-        activeController: currentController,
-        pendingRequests: pendingRequests,
-      };
-    }
+    // Use the session-based state for active controller
+    const activeController = sessionConfig ? sessionConfig.targetUserId : currentController;
     
-    // Fallback to old structure
-    if (!localAuthUserId) return { ownerId: null, activeController: null, pendingRequests: [] };
-    const mine = accessStateByOwner[String(localAuthUserId)] || null;
     return {
       ownerId: localAuthUserId,
-      activeController: mine ? mine.activeController || null : null,
-      pendingRequests: mine && Array.isArray(mine.pendingRequests) ? mine.pendingRequests : [],
+      activeController: activeController,
+      pendingRequests: pendingRequests || [],
     };
-  }, [accessStateByOwner, localAuthUserId, currentController, pendingRequests]);
+  }, [localAuthUserId, sessionConfig, currentController, pendingRequests]);
 
 
 
-  useEffect(() => {
-
-    const socket = meetingSocket;
-
-    if (!socket) return;
-
-
-
-    const handleRemoteAccessStateUpdate = (data) => {
-      if (!data || String(data.meetingId || '') !== String(roomId)) return;
-      
-      console.log('[VideoRoom] Remote access state update:', data);
-      
-      setCurrentController(data.currentController);
-      setPendingRequests(Array.isArray(data.pendingRequests) ? data.pendingRequests : []);
-      setHostOverride(data.hostOverride);
-      
-      // Also update the old structure for backward compatibility
-      if (localAuthUserId) {
-        const ownerId = String(localAuthUserId);
-        setAccessStateByOwner((prev) => ({
-          ...prev,
-          [ownerId]: {
-            ownerId,
-            activeController: data.currentController || null,
-            pendingRequests: Array.isArray(data.pendingRequests) ? data.pendingRequests : [],
-          },
-        }));
-      }
-    };
-
-    const handleAccessState = (payload) => {
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-      if (!payload.ownerId) return;
-
-      const ownerId = String(payload.ownerId);
-      
-      // Update old structure
-      setAccessStateByOwner((prev) => ({
-        ...prev,
-        [ownerId]: {
-          ownerId,
-          activeController: payload.activeController || null,
-          pendingRequests: Array.isArray(payload.pendingRequests) ? payload.pendingRequests : [],
-        },
-      }));
-      
-      // Also update new structure if this matches our user
-      if (localAuthUserId && String(localAuthUserId) === String(ownerId)) {
-        setCurrentController(payload.activeController);
-        setPendingRequests(Array.isArray(payload.pendingRequests) ? payload.pendingRequests : []);
-      }
-    };
-
-
-
-    const handleIncoming = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      if (localAuthUserId && payload.ownerId && String(payload.ownerId) !== String(localAuthUserId)) return;
-
-      setAccessPopup({
-
-        requesterId: payload.requesterId,
-
-        requestedAt: payload.requestedAt || Date.now(),
-
-      });
-
-    };
-
-
-
-    const handleGranted = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      const ownerId = payload.ownerId;
-
-      setRequestingByTarget((prev) => {
-
-        const next = { ...prev };
-
-        if (ownerId) delete next[String(ownerId)];
-
-        return next;
-
-      });
-
-    };
-
-
-
-    const handleRevoked = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      // state is already synced via access-state; keep minimal local cleanup
-
-    };
-
-
-
-    const handleRejected = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      const ownerId = payload.ownerId;
-
-      setRequestingByTarget((prev) => {
-
-        const next = { ...prev };
-
-        if (ownerId) delete next[String(ownerId)];
-
-        return next;
-
-      });
-
-    };
-
-
-
-    const handleErr = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      console.warn('[access-error]', payload.message);
-
-    };
-
-
-
-    socket.on('remote-access-state-update', handleRemoteAccessStateUpdate);
-    socket.on('access-state', handleAccessState);
-
-    socket.on('incoming-access-request', handleIncoming);
-
-    socket.on('access-granted', handleGranted);
-
-    socket.on('access-revoked', handleRevoked);
-
-    socket.on('access-rejected', handleRejected);
-
-    socket.on('access-error', handleErr);
-
-    return () => {
-      socket.off('remote-access-state-update', handleRemoteAccessStateUpdate);
-      socket.off('access-state', handleAccessState);
-
-      socket.off('incoming-access-request', handleIncoming);
-
-      socket.off('access-granted', handleGranted);
-
-      socket.off('access-revoked', handleRevoked);
-
-      socket.off('access-rejected', handleRejected);
-
-      socket.off('access-error', handleErr);
-
-    };
-
-  }, [roomId, localAuthUserId]);
-
+  // Old socket listeners are removed since we're using DeskLink socket system
+  // The state is now managed through useDeskLinkSocket handlers above
 
 
   const requestAccess = React.useCallback(
     (targetAuthUserId) => {
-      const socket = meetingSocket;
-      if (!socket) return;
-      if (!localAuthUserId || !targetAuthUserId) return;
-      if (String(localAuthUserId) === String(targetAuthUserId)) return;
-
+      // Use the same request system as bottom panel
+      const targetParticipant = participantsByAuthId.get(String(targetAuthUserId));
+      if (!targetParticipant || !targetParticipant.targetUserId) {
+        console.warn('[VideoRoom] Target participant not found or no targetUserId');
+        return;
+      }
+      
       setRequestingByTarget((prev) => ({ ...prev, [String(targetAuthUserId)]: true }));
-
-      socket.emit('remote-access-request', {
-        roomId,
-        targetUserId: String(targetAuthUserId),
+      
+      requestControlForUser({
+        targetUserId: targetParticipant.targetUserId,
+        targetName: targetParticipant.name || targetParticipant.userName,
+        senderAuthId: localAuthUserId
       });
     },
-    [roomId, localAuthUserId]
+    [participantsByAuthId, localAuthUserId, requestControlForUser]
   );
 
 
 
   const acceptRequest = React.useCallback(
     (requesterAuthUserId) => {
-      const socket = meetingSocket;
-      if (!socket) return;
-      if (!localAuthUserId) return;
-      
-      socket.emit('remote-access-accept', {
-        roomId,
-        targetUserId: String(requesterAuthUserId),
-      });
+      // Find the incoming request for this user
+      if (incomingRequest && String(incomingRequest.fromUserId) === String(requesterAuthUserId)) {
+        acceptIncomingRequest();
+      }
     },
-    [roomId, localAuthUserId]
+    [incomingRequest, acceptIncomingRequest]
   );
 
 
 
   const rejectRequest = React.useCallback(
     (requesterAuthUserId) => {
-      const socket = meetingSocket;
-      if (!socket) return;
-      if (!localAuthUserId) return;
-      
-      socket.emit('remote-access-reject', {
-        roomId,
-        targetUserId: String(requesterAuthUserId),
-      });
+      // Find the incoming request for this user
+      if (incomingRequest && String(incomingRequest.fromUserId) === String(requesterAuthUserId)) {
+        rejectIncomingRequest();
+      }
     },
-    [roomId, localAuthUserId]
+    [incomingRequest, rejectIncomingRequest]
   );
 
 
 
   const revokeAccess = React.useCallback(() => {
-    const socket = meetingSocket;
-    if (!socket) return;
-    if (!localAuthUserId) return;
-    
-    socket.emit('remote-access-revoke', { roomId });
-  }, [roomId, localAuthUserId]);
+    // End the current session if we're the controller
+    if (sessionConfig && sessionConfig.sessionId) {
+      // Send end message through the control channel
+      sendControlMessage({ type: 'end-session' });
+      setCurrentController(null);
+    }
+  }, [sessionConfig, sendControlMessage]);
 
   const switchAccess = React.useCallback(
     (targetUserId) => {
-      const socket = meetingSocket;
-      if (!socket) return;
-      if (!localAuthUserId) return;
+      // First revoke current access, then accept new request
+      if (sessionConfig) {
+        sendControlMessage({ type: 'end-session' });
+      }
       
-      socket.emit('remote-access-switch', {
-        roomId,
-        targetUserId: String(targetUserId),
-      });
+      // Accept the new request
+      const targetParticipant = participantsByAuthId.get(String(targetUserId));
+      if (targetParticipant && incomingRequest && String(incomingRequest.fromUserId) === String(targetUserId)) {
+        acceptIncomingRequest();
+      }
     },
-    [roomId, localAuthUserId]
+    [sessionConfig, sendControlMessage, participantsByAuthId, incomingRequest, acceptIncomingRequest]
   );
 
 
