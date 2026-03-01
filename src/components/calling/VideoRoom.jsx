@@ -32,6 +32,7 @@ import IncomingRequestModal from '../../modules/desklink/components/IncomingRequ
 import RemoteControlPanel from '../../modules/desklink/components/RemoteControlPanel.jsx';
 import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
 import { getSocket } from '../../socket.js';
+import AgentStatusBanner from '../../modules/desklink/components/AgentStatusBanner.jsx';
 
 
 import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
@@ -614,6 +615,16 @@ function VideoRoomInner({
   return (
 
     <div className="flex flex-col w-full h-screen bg-slate-950 text-white overflow-hidden relative">
+      {/* Top Bar with Agent status and Room info */}
+      <div className="absolute top-4 left-6 right-6 z-30 flex items-center justify-between pointer-events-none">
+        <div className="flex items-center gap-4 pointer-events-auto">
+          <div className="bg-slate-900/40 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10">
+            <h1 className="text-xl font-bold text-white tracking-tight">Meeting Room</h1>
+            <p className="text-xs text-slate-400 font-medium">{shortId(roomId)}</p>
+          </div>
+          <AgentStatusBanner />
+        </div>
+      </div>
 
       {reactions && reactions.length > 0 && (
 

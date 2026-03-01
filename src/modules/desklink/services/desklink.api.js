@@ -142,7 +142,7 @@ export const desklinkApi = {
 
       headers,
 
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         toUserId: targetUserId,
         fromMeeting: true  // ✅ Mark this as a meeting session
       }),
@@ -228,21 +228,23 @@ export const desklinkApi = {
 
 
   async getTurnToken(token) {
-
     const res = await fetch(`${API_BASE}/remote/turn-token`, {
-
       headers: {
-
         Authorization: `Bearer ${token}`,
-
       },
-
     });
-
     return parseJSON(res);
-
   },
 
+  async provisionAgentToken(token) {
+    const res = await fetch(`${API_BASE}/agent/provision`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return parseJSON(res);
+  },
 };
 
 

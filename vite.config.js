@@ -25,7 +25,8 @@ export default defineConfig({
         target: 'https://anydesk.onrender.com',
         changeOrigin: true,
         ws: true,
+        secure: true,
       },
-    },
+    }
   }
 });

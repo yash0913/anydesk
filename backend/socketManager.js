@@ -102,19 +102,17 @@ function emitToUser(userId, event, payload) {
   if (!ioInstance || !userId) return;
 
   const sockets = onlineUsersById.get(String(userId));
+  if (!sockets || sockets.size === 0) {
+    console.warn(`[emitToUser] No active sockets found for userId: ${userId}`);
+    return;
+  }
 
-  if (!sockets) return;
-
+  console.log(`[emitToUser] Sending ${event} to ${sockets.size} sockets for userId: ${userId}`);
   sockets.forEach((socketId) => {
-
     const target = ioInstance.sockets.sockets.get(socketId);
-
     if (target) {
-
       target.emit(event, payload);
-
     }
-
   });
 
 }
@@ -250,13 +248,9 @@ function createSocketServer(server, clientOrigin) {
   const io = new Server(server, {
 
     cors: {
-
-      origin: clientOrigin,
-
+      origin: '*',
       methods: ['GET', 'POST'],
-
       credentials: true,
-
     },
 
   });
@@ -577,116 +571,130 @@ function createSocketServer(server, clientOrigin) {
         const userId = socket.userId ? String(socket.userId) : null;
 
         deviceRegistryById.set(devId, {
-
           userId: userId || 'unknown',
-
           deviceType: effectiveType,
-
           socketId: socket.id,
-
           lastSeen: Date.now(),
-
           isOnline: true,
-
         });
 
+        console.log(`[DEVICE REGISTER] devId=${devId}, userId=${userId}, effectiveType=${effectiveType}`);
 
-
-        // Auto-register or update device record in MongoDB
-
-        const now = new Date();
-
-
-
-        if (!userId) {
-
-          console.warn('[device] register called without authenticated user for deviceId=', devId);
-
-          return;
-
+        if (userId) {
+          // Notify owner that agent is now ONLINE
+          emitToUser(userId, 'agent-status-change', {
+            deviceId: devId,
+            userId: userId,
+            status: 'online',
+            label: deviceName || label
+          });
         }
 
+        // Auto-register or update device record in MongoDB
+        const now = new Date();
 
+        if (!userId) {
+          console.warn('[device] register called without authenticated user for deviceId=', devId);
+          return;
+        }
 
         await Device.updateOne(
-
           { deviceId: devId },
-
           {
-
             $setOnInsert: {
-
               deviceId: devId,
-
               registeredAt: now,
-
             },
-
             $set: {
-
               userId: userId,
-
               deviceName: deviceName || label || 'Agent Device',
-
               osInfo: osInfo || platform || 'Unknown',
-
               platform: platform || '',
-
               deviceType: effectiveType,
-
               deleted: false,
-
               blocked: false,
-
               label: label || 'Agent Device',
-
               lastOnline: now,
-
             },
-
           },
-
           { upsert: true }
-
         );
-
-
 
         console.log('[device] registered/updated', devId, 'for user', userId || '(none)');
 
-
-
         // flush pending signals to this device if any
-
         const pending = pendingSignalsByDevice.get(devId);
-
         if (pending && pending.length > 0) {
-
           for (const sig of pending) {
-
             try {
-
               socket.emit(sig.event, sig.payload);
-
             } catch (e) {
-
               // ignore
-
             }
-
           }
-
           pendingSignalsByDevice.delete(devId);
-
         }
-
       } catch (err) {
-
-        console.error('[device] register error', err && err.message);
-
+        console.error('[DEVICE REGISTER] error', err);
       }
-
     });
+
+    // Manual Agent Status Check (Fail-safe)
+    socket.on('check-agent-status', () => {
+      const userId = socket.userId ? String(socket.userId) : null;
+      if (!userId) return;
+
+      const devices = getDeviceRegistrySnapshotForUser(userId);
+      const nativeAgent = devices.find(d => d.deviceType === 'native-agent' && d.isOnline);
+
+      socket.emit('agent-status-change', {
+        status: nativeAgent ? 'online' : 'offline',
+        deviceId: nativeAgent?.deviceId,
+        userId: userId
+      });
+    });
+
+    // Agent Heartbeat Handler
+    socket.on('agent-heartbeat', ({ deviceId }) => {
+      if (!deviceId) return;
+      const devId = String(deviceId);
+      const meta = deviceRegistryById.get(devId);
+
+      if (meta) {
+        meta.lastSeen = Date.now();
+        if (!meta.isOnline) {
+          meta.isOnline = true;
+          if (meta.userId) {
+            emitToUser(meta.userId, 'agent-status-change', {
+              deviceId: devId,
+              userId: meta.userId,
+              status: 'online'
+            });
+          }
+        }
+      }
+    });
+
+    // Periodic check for stale agents (every 60s)
+    const STALE_CHECK_INTERVAL = 60000;
+    const HEARTBEAT_TIMEOUT = 120000;
+
+    const staleTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [devId, meta] of deviceRegistryById.entries()) {
+        if (meta.isOnline && (now - meta.lastSeen > HEARTBEAT_TIMEOUT)) {
+          console.log(`[AGENT STALE] Marking agent ${devId} as offline (no heartbeat)`);
+          meta.isOnline = false;
+          if (meta.userId) {
+            emitToUser(meta.userId, 'agent-status-change', {
+              deviceId: devId,
+              userId: meta.userId,
+              status: 'offline'
+            });
+          }
+        }
+      }
+    }, STALE_CHECK_INTERVAL);
 
 
 

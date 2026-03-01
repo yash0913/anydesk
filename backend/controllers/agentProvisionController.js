@@ -21,6 +21,7 @@ module.exports.provisionAgentToken = async (req, res) => {
     }
 
     const payload = { id: user._id.toString(), agent: true };
+    console.log('[AGENT PROVISION] Generating token for user:', user._id.toString());
 
     const agentJwt = jwt.sign(payload, process.env.JWT_SECRET, {
       expiresIn: '24h',

@@ -7,22 +7,26 @@
 import { io } from 'socket.io-client';
 
 let globalSocket = null;
+let currentToken = null;
 let connectionAttempts = 0;
 let pendingConnectPromise = null;
 let webDeviceRegistered = false; // Prevent duplicate registrations
 const MAX_CONNECTION_ATTEMPTS = 5; // Increased slightly for better reliability
 
-/**
- * Get or create the global socket instance
- * @param {string} token - JWT auth token
- * @returns {Promise<Socket>} Socket instance
- */
 export function getSocket(token) {
+  // If token changed, disconnect old socket
+  if (globalSocket && currentToken && currentToken !== token) {
+    console.log('[SOCKET] Token changed, disconnecting old socket');
+    disconnectSocket();
+  }
+
   // If socket already exists and is connected, return it
   if (globalSocket && globalSocket.connected) {
     console.log('[SOCKET] Reusing existing connected socket:', globalSocket.id);
     return Promise.resolve(globalSocket);
   }
+
+  currentToken = token;
 
   // If there's already a connection attempt in progress, return that same promise
   if (pendingConnectPromise) {
@@ -43,9 +47,13 @@ export function getSocket(token) {
     console.log(`[SOCKET] Connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
 
     // Create new socket with auth
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com', {
+    const SOCKET_BASE = import.meta.env.VITE_SOCKET_URL || 'https://anydesk.onrender.com';
+
+    console.log('[SOCKET] Connecting to:', SOCKET_BASE);
+
+    const socket = io(SOCKET_BASE, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
       reconnectionAttempts: 3,
       timeout: 10000,
     });
@@ -57,7 +65,7 @@ export function getSocket(token) {
       globalSocket = socket;
       connectionAttempts = 0; // Reset on successful connection
       pendingConnectPromise = null;
-      
+
       // Register web client device for signaling routing (only once)
       if (socket.auth?.token && !webDeviceRegistered) {
         try {
@@ -66,7 +74,7 @@ export function getSocket(token) {
           if (tokenParts.length === 3) {
             const payload = JSON.parse(atob(tokenParts[1]));
             const userId = payload.id;
-            
+
             if (userId) {
               const webDeviceId = `web-${userId}`;
               socket.emit('register-device', {
@@ -82,7 +90,7 @@ export function getSocket(token) {
           console.warn('[SOCKET] Failed to register web device:', err.message);
         }
       }
-      
+
       resolve(socket);
     });
 

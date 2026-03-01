@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 
 
 
@@ -89,6 +89,13 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
   const [actionLogs, setActionLogs] = useState([]);
 
   const [activeControllerName, setActiveControllerName] = useState(null);
+  const [agentStatus, setAgentStatus] = useState('unknown'); // online, offline, provisioning, unknown
+  const [checkedLocal, setCheckedLocal] = useState(false);
+  const statusRef = useRef(agentStatus);
+
+  useEffect(() => {
+    statusRef.current = agentStatus;
+  }, [agentStatus]);
 
 
 
@@ -199,6 +206,141 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
       }
     },
   });
+
+  const checkLocalAgent = useCallback(async () => {
+    try {
+      console.log('[MeetingRemoteControl] Checking local agent...');
+      const resp = await fetch('http://127.0.0.1:17600/device-id', { signal: AbortSignal.timeout(2000) });
+      if (resp.ok) {
+        const { deviceId } = await resp.json();
+        console.log('[MeetingRemoteControl] Local agent detected:', deviceId);
+        // We still wait for backend to confirm socket connection
+        return deviceId;
+      }
+    } catch (err) {
+      console.log('[MeetingRemoteControl] Local agent not detected at :17600');
+    }
+    return null;
+  }, []);
+
+  const provisionAgent = useCallback(async () => {
+    if (!token) return;
+    try {
+      setAgentStatus('provisioning');
+      console.log('[MeetingRemoteControl] Starting agent provisioning...');
+
+      // 1. Get agent JWT from backend
+      const { agentJwt } = await desklinkApi.provisionAgentToken(token);
+
+      // 2. Send to local agent API
+      // Hardcode to production as per user request
+      const serverUrl = 'https://anydesk.onrender.com';
+      console.log('[MeetingRemoteControl] Pushing to local agent:', { serverUrl, hasJwt: !!agentJwt });
+
+      const resp = await fetch('http://127.0.0.1:17600/provision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverUrl, agentJwt })
+      });
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        throw new Error(`Failed to send provisioning to local agent: ${resp.status} ${errorText}`);
+      }
+
+      console.log('[MeetingRemoteControl] Provisioning sent successfully to local agent');
+      // Status will be updated to 'online' via socket event 'agent-status-change'
+      // Fail-safe: check status manually via socket after small delay
+      setTimeout(() => {
+        if (socket?.connected) {
+          console.log('[MeetingRemoteControl] Proactive status check...');
+          socket.emit('check-agent-status');
+        }
+      }, 5000);
+    } catch (err) {
+      console.error('[MeetingRemoteControl] Provisioning failed phase:', err);
+      setAgentStatus('offline');
+    }
+  }, [token, socket]);
+
+  const checkAgentStatus = useCallback(() => {
+    if (socket?.connected) {
+      socket.emit('check-agent-status');
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (agentStatus !== 'online' && socket?.connected) {
+        checkAgentStatus();
+      }
+    }, 30000); // Pulse check every 30s if not online
+    return () => clearInterval(interval);
+  }, [agentStatus, socket, checkAgentStatus]);
+
+  useEffect(() => {
+    if (socket) {
+      console.log('[MeetingRemoteControl] UI Socket State:', {
+        id: socket.id,
+        connected: socket.connected,
+        authenticated: !!token,
+        tokenPrefix: token ? token.substring(0, 10) + '...' : 'NONE'
+      });
+    }
+
+    const anyListener = (event, ...args) => {
+      console.log(`[MeetingRemoteControl] 🛰️ Socket Event: ${event}`, args);
+    };
+    socket.onAny(anyListener);
+
+    const handleStatusChange = (payload) => {
+      console.log('[MeetingRemoteControl] 🤖 Agent status change:', payload);
+      // Optional: Check if deviceId matches if we know it locally
+      setAgentStatus(payload.status);
+    };
+
+    socket.on('agent-status-change', handleStatusChange);
+    return () => socket.off('agent-status-change', handleStatusChange);
+  }, [socket]);
+
+  // Provisioning safety timeout
+  useEffect(() => {
+    let timeoutId;
+    if (agentStatus === 'provisioning') {
+      timeoutId = setTimeout(() => {
+        console.warn('[MeetingRemoteControl] Provisioning timed out after 15s');
+        setAgentStatus(prev => prev === 'provisioning' ? 'offline' : prev);
+      }, 15000);
+    }
+    return () => clearTimeout(timeoutId);
+  }, [agentStatus]);
+
+  useEffect(() => {
+    if (token) {
+      const check = () => {
+        // Use ref to avoid closure issues with periodic checks
+        if (statusRef.current === 'online' || statusRef.current === 'provisioning') return;
+
+        checkLocalAgent().then(id => {
+          setAgentStatus(current => {
+            // Final safety check inside the setter
+            if (current === 'online' || current === 'provisioning') return current;
+            return id ? 'offline' : 'disconnected';
+          });
+        });
+      };
+
+      check();
+      const interval = setInterval(check, 15000); // Check every 15s if not active
+      return () => clearInterval(interval);
+    }
+  }, [token, checkLocalAgent]);
+
+  useEffect(() => {
+    if (agentStatus === 'offline' && checkedLocal) {
+      console.warn('[MeetingRemoteControl] Agent is offline. Encouraging reconnection...');
+    }
+  }, [agentStatus, checkedLocal]);
 
 
   // Load native device id (DeskLink agent id) for this machine
@@ -1212,10 +1354,16 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
 
       }
 
-
-
     };
 
+
+
+    const handleSessionEnded = (payload) => {
+      console.log('[MeetingRemoteControl] 🛑 session-ended received:', payload);
+      stopSession();
+      setSessionConfig(null);
+      setActiveSessionId(null);
+    };
 
     const handleHostActionLog = (payload) => {
       console.log('[MeetingRemoteControl] 📝 Received action log:', payload);
@@ -1258,7 +1406,7 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
       socket.off('host-action-log', handleHostActionLog);
     };
 
-  }, [socket, token, startAsCaller, startAsReceiver, activeSessionId, localAuthUserId, addLog, handleSessionStart, handleSessionEnded]);
+  }, [socket, token, startAsCaller, startAsReceiver, activeSessionId, localAuthUserId, addLog]);
 
 
   const value = {
@@ -1306,6 +1454,11 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
     requestControlForUser,
 
     checkUserAgentStatus,
+    agentStatus,
+    setAgentStatus,
+    provisionAgent,
+    checkAgentStatus,
+    checkLocalAgent,
 
 
     // WebRTC state for remote desktop
@@ -1325,11 +1478,12 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
     actionLogs,
 
     activeControllerName,
-
+    agentStatus,
+    provisionAgent,
+    checkLocalAgent,
     setOnDataMessage,
 
     setOnConnected,
-
 
 
     setOnDisconnected,
