@@ -16,8 +16,6 @@ import { useMeetingParticipants } from './useMeetingParticipants.js';
 
 import { useScreenShare } from './useScreenShare.js';
 
-import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
-
 import MeetingGrid from './MeetingGrid.jsx';
 
 import ControlBar from './ControlBar.jsx';
@@ -32,10 +30,8 @@ import RemoteVideoArea from '../../modules/desklink/components/RemoteVideoArea.j
 
 import IncomingRequestModal from '../../modules/desklink/components/IncomingRequestModal.jsx';
 
+import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
 import { getSocket } from '../../socket.js';
-
-import { useAuth } from "../../modules/auth/hooks/useAuth.js";
-
 import { MousePointer2 } from 'lucide-react';
 
 import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
@@ -207,57 +203,12 @@ function VideoRoomInner({
     checkUserAgentStatus, // Exported from context
 
     meetingSocketReady, // Exported from context
-
     meetingSocket, // Exported from context
-
   } = useMeetingRemoteControl();
 
-  // Get auth token for DeskLink socket
-  const { token } = useAuth();
-  
-  // Use the same socket as bottom panel
-  const { socket: deskLinkSocket } = useDeskLinkSocket({
-    token,
-    onRemoteRequest: (payload) => {
-      console.log('[VideoRoom] Remote request received:', payload);
-      // Handle incoming remote access requests
-      if (payload.roomId === roomId) {
-        // Update pending requests
-        setPendingRequests(prev => {
-          const exists = prev.some(r => r.userId === payload.fromUserId);
-          if (!exists) {
-            return [...prev, {
-              userId: payload.fromUserId,
-              requestedAt: Date.now()
-            }];
-          }
-          return prev;
-        });
-      }
-    },
-    onRemoteResponse: (payload) => {
-      console.log('[VideoRoom] Remote response received:', payload);
-      // Handle accept/reject responses
-      if (payload.roomId === roomId) {
-        if (payload.status === 'accepted') {
-          setCurrentController(payload.fromUserId);
-          // Remove from pending
-          setPendingRequests(prev => 
-            prev.filter(r => r.userId !== payload.fromUserId)
-          );
-        } else if (payload.status === 'rejected') {
-          // Remove from pending
-          setPendingRequests(prev => 
-            prev.filter(r => r.userId !== payload.fromUserId)
-          );
-        } else if (payload.status === 'ended') {
-          setCurrentController(null);
-        }
-      }
-    }
-  });
 
-// ...
+
+
   // STEP 2: Add derived state for remote desktop
   const isRemoteDesktopActive = !!remoteDesktopStream;
 
@@ -306,10 +257,6 @@ function VideoRoomInner({
 
 
   const [isAccessPanelOpen, setIsAccessPanelOpen] = React.useState(false);
-
-  const [currentController, setCurrentController] = React.useState(null);
-  const [pendingRequests, setPendingRequests] = React.useState([]);
-  const [hostOverride, setHostOverride] = React.useState(null);
 
   const [accessStateByOwner, setAccessStateByOwner] = React.useState({});
 
@@ -412,99 +359,294 @@ function VideoRoomInner({
 
 
   const pendingIncomingCount = React.useMemo(() => {
-    // Use the new state structure
-    return pendingRequests ? pendingRequests.length : 0;
-  }, [pendingRequests]);
+
+    if (!localAuthUserId) return 0;
+
+    const mine = accessStateByOwner[String(localAuthUserId)];
+
+    const pending = mine && Array.isArray(mine.pendingRequests) ? mine.pendingRequests : [];
+
+    return pending.length;
+
+  }, [accessStateByOwner, localAuthUserId]);
 
 
 
   const myAccessState = React.useMemo(() => {
-    // Use the session-based state for active controller
-    const activeController = sessionConfig ? sessionConfig.targetUserId : currentController;
-    
+
+    if (!localAuthUserId) return { ownerId: null, activeController: null, pendingRequests: [] };
+
+    const mine = accessStateByOwner[String(localAuthUserId)] || null;
+
     return {
+
       ownerId: localAuthUserId,
-      activeController: activeController,
-      pendingRequests: pendingRequests || [],
+
+      activeController: mine ? mine.activeController || null : null,
+
+      pendingRequests: mine && Array.isArray(mine.pendingRequests) ? mine.pendingRequests : [],
+
     };
-  }, [localAuthUserId, sessionConfig, currentController, pendingRequests]);
+
+  }, [accessStateByOwner, localAuthUserId]);
 
 
 
-  // Old socket listeners are removed since we're using DeskLink socket system
-  // The state is now managed through useDeskLinkSocket handlers above
+  useEffect(() => {
+
+    const socket = meetingSocket;
+
+    if (!socket) return;
+
+
+
+    const handleAccessState = (payload) => {
+
+      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
+
+      if (!payload.ownerId) return;
+
+      const ownerId = String(payload.ownerId);
+
+      setAccessStateByOwner((prev) => ({
+
+        ...prev,
+
+        [ownerId]: {
+
+          ownerId,
+
+          activeController: payload.activeController || null,
+
+          pendingRequests: Array.isArray(payload.pendingRequests) ? payload.pendingRequests : [],
+
+        },
+
+      }));
+
+    };
+
+
+
+    const handleIncoming = (payload) => {
+
+      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
+
+      if (localAuthUserId && payload.ownerId && String(payload.ownerId) !== String(localAuthUserId)) return;
+
+      setAccessPopup({
+
+        requesterId: payload.requesterId,
+
+        requestedAt: payload.requestedAt || Date.now(),
+
+      });
+
+    };
+
+
+
+    const handleGranted = (payload) => {
+
+      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
+
+      const ownerId = payload.ownerId;
+
+      setRequestingByTarget((prev) => {
+
+        const next = { ...prev };
+
+        if (ownerId) delete next[String(ownerId)];
+
+        return next;
+
+      });
+
+    };
+
+
+
+    const handleRevoked = (payload) => {
+
+      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
+
+      // state is already synced via access-state; keep minimal local cleanup
+
+    };
+
+
+
+    const handleRejected = (payload) => {
+
+      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
+
+      const ownerId = payload.ownerId;
+
+      setRequestingByTarget((prev) => {
+
+        const next = { ...prev };
+
+        if (ownerId) delete next[String(ownerId)];
+
+        return next;
+
+      });
+
+    };
+
+
+
+    const handleErr = (payload) => {
+
+      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
+
+      console.warn('[access-error]', payload.message);
+
+    };
+
+
+
+    socket.on('access-state', handleAccessState);
+
+    socket.on('incoming-access-request', handleIncoming);
+
+    socket.on('access-granted', handleGranted);
+
+    socket.on('access-revoked', handleRevoked);
+
+    socket.on('access-rejected', handleRejected);
+
+    socket.on('access-error', handleErr);
+
+    return () => {
+
+      socket.off('access-state', handleAccessState);
+
+      socket.off('incoming-access-request', handleIncoming);
+
+      socket.off('access-granted', handleGranted);
+
+      socket.off('access-revoked', handleRevoked);
+
+      socket.off('access-rejected', handleRejected);
+
+      socket.off('access-error', handleErr);
+
+    };
+
+  }, [roomId, localAuthUserId]);
+
 
 
   const requestAccess = React.useCallback(
+
     (targetAuthUserId) => {
-      // Use the same request system as bottom panel
-      const targetParticipant = participantsByAuthId.get(String(targetAuthUserId));
-      if (!targetParticipant || !targetParticipant.targetUserId) {
-        console.warn('[VideoRoom] Target participant not found or no targetUserId');
-        return;
-      }
-      
+
+      const socket = meetingSocket;
+
+      if (!socket) return;
+
+      if (!localAuthUserId || !targetAuthUserId) return;
+
+      if (String(localAuthUserId) === String(targetAuthUserId)) return;
+
+
+
       setRequestingByTarget((prev) => ({ ...prev, [String(targetAuthUserId)]: true }));
-      
-      requestControlForUser({
-        targetUserId: targetParticipant.targetUserId,
-        targetName: targetParticipant.name || targetParticipant.userName,
-        senderAuthId: localAuthUserId
+
+
+
+      socket.emit('request-access', {
+
+        meetingId: roomId,
+
+        targetUserId: String(targetAuthUserId),
+
+        requesterId: String(localAuthUserId),
+
       });
+
     },
-    [participantsByAuthId, localAuthUserId, requestControlForUser]
+
+    [roomId, localAuthUserId]
+
   );
 
 
 
   const acceptRequest = React.useCallback(
+
     (requesterAuthUserId) => {
-      // Find the incoming request for this user
-      if (incomingRequest && String(incomingRequest.fromUserId) === String(requesterAuthUserId)) {
-        acceptIncomingRequest();
-      }
+
+      const socket = meetingSocket;
+
+      if (!socket) return;
+
+      if (!localAuthUserId) return;
+
+      socket.emit('grant-access', {
+
+        meetingId: roomId,
+
+        ownerId: String(localAuthUserId),
+
+        requesterId: String(requesterAuthUserId),
+
+      });
+
     },
-    [incomingRequest, acceptIncomingRequest]
+
+    [roomId, localAuthUserId]
+
   );
 
 
 
   const rejectRequest = React.useCallback(
+
     (requesterAuthUserId) => {
-      // Find the incoming request for this user
-      if (incomingRequest && String(incomingRequest.fromUserId) === String(requesterAuthUserId)) {
-        rejectIncomingRequest();
-      }
+
+      const socket = meetingSocket;
+
+      if (!socket) return;
+
+      if (!localAuthUserId) return;
+
+      socket.emit('reject-access', {
+
+        meetingId: roomId,
+
+        ownerId: String(localAuthUserId),
+
+        requesterId: String(requesterAuthUserId),
+
+      });
+
     },
-    [incomingRequest, rejectIncomingRequest]
+
+    [roomId, localAuthUserId]
+
   );
 
 
 
   const revokeAccess = React.useCallback(() => {
-    // End the current session if we're the controller
-    if (sessionConfig && sessionConfig.sessionId) {
-      // Send end message through the control channel
-      sendControlMessage({ type: 'end-session' });
-      setCurrentController(null);
-    }
-  }, [sessionConfig, sendControlMessage]);
 
-  const switchAccess = React.useCallback(
-    (targetUserId) => {
-      // First revoke current access, then accept new request
-      if (sessionConfig) {
-        sendControlMessage({ type: 'end-session' });
-      }
-      
-      // Accept the new request
-      const targetParticipant = participantsByAuthId.get(String(targetUserId));
-      if (targetParticipant && incomingRequest && String(incomingRequest.fromUserId) === String(targetUserId)) {
-        acceptIncomingRequest();
-      }
-    },
-    [sessionConfig, sendControlMessage, participantsByAuthId, incomingRequest, acceptIncomingRequest]
-  );
+    const socket = meetingSocket;
+
+    if (!socket) return;
+
+    if (!localAuthUserId) return;
+
+    socket.emit('revoke-access', {
+
+      meetingId: roomId,
+
+      ownerId: String(localAuthUserId),
+
+    });
+
+  }, [roomId, localAuthUserId]);
 
 
 
@@ -988,7 +1130,7 @@ function VideoRoomInner({
 
                             type="button"
 
-                            onClick={() => switchAccess(String(r.userId))}
+                            onClick={() => acceptRequest(String(r.userId))}
 
                             className="w-full flex items-center justify-between rounded-md bg-slate-900/60 hover:bg-slate-900 px-2 py-2"
 
