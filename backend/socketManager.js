@@ -2056,228 +2056,431 @@ function createSocketServer(server, clientOrigin) {
             hostName: caller.userName,
 
           });
+
         }
+
+
+
+        // Let clients update UI for that userId
+
+        io.to(roomId).emit('audio-mute', {
+
+          userId: uid,
+
+        });
+
       });
 
-      // Let clients update UI for that userId
-      io.to(roomId).emit('audio-mute', {
-        userId: uid,
-      });
     });
 
+
+
     // Meeting Remote Access Control Events
+
     socket.on('request-access', ({ meetingId, targetUserId, requesterId }) => {
-      console.log(`[Control Request] User ${requesterId} wants control of ${targetUserId} in meeting ${meetingId}`);
-      
+
       try {
+
         const roomId = meetingId;
+
         const ownerId = String(targetUserId || '');
+
         const requesterAuthId = String(requesterId || getAuthUserIdForSocket(socket) || '');
 
+
+
         if (!roomId || !ownerId) {
+
           socket.emit('access-error', { meetingId: roomId || null, message: 'meetingId and targetUserId are required' });
+
           return;
+
         }
 
         if (!requesterAuthId) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Authentication required' });
+
           return;
+
         }
 
         if (!rooms.has(roomId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Room not found' });
+
           return;
+
         }
 
         if (!isAuthUserInRoom(roomId, requesterAuthId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Only meeting participants can request access' });
+
           return;
+
         }
 
         if (!isAuthUserInRoom(roomId, ownerId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Target user is not in this meeting' });
+
           return;
+
         }
 
         if (String(requesterAuthId) === String(ownerId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Cannot request access to your own PC' });
+
           return;
+
         }
+
+
 
         const state = getOrInitOwnerState(roomId, ownerId);
 
+
+
         if (state.activeController && String(state.activeController) === String(requesterAuthId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'You are already controlling this PC' });
+
           return;
+
         }
 
+
+
         const alreadyPending = state.pendingRequests.some((r) => String(r.userId) === String(requesterAuthId));
+
         if (alreadyPending) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Request already pending' });
+
           return;
+
         }
+
+
 
         state.pendingRequests.push({ userId: String(requesterAuthId), requestedAt: Date.now() });
 
+
+
         console.log(`[Access Request] ${getDisplayName(roomId, requesterAuthId)} → ${getDisplayName(roomId, ownerId)} (Meeting: ${roomId})`);
 
+
+
         const ownerEntry = findMeetingUserByAuth(roomId, ownerId);
+
         if (ownerEntry) {
+
           const ownerSocket = io.sockets.sockets.get(ownerEntry.data.socketId);
+
           if (ownerSocket) {
+
             ownerSocket.emit('incoming-access-request', {
+
               meetingId: roomId,
+
               ownerId: String(ownerId),
+
               requesterId: String(requesterAuthId),
+
               requestedAt: Date.now(),
+
             });
+
           }
+
         }
+
+
 
         emitAccessState(roomId, ownerId);
+
       } catch (err) {
+
         console.error('[MeetingAccess] request-access error', err && err.message);
+
       }
+
     });
 
+
+
     socket.on('grant-access', ({ meetingId, ownerId, requesterId }) => {
+
       try {
+
         const roomId = meetingId;
+
         const ownerAuthId = String(ownerId || '');
+
         const controllerId = String(requesterId || '');
 
+
+
         if (!roomId || !ownerAuthId || !controllerId) {
+
           socket.emit('access-error', { meetingId: roomId || null, message: 'meetingId, ownerId, requesterId are required' });
+
           return;
+
         }
+
+
 
         const socketAuthId = getAuthUserIdForSocket(socket);
+
         if (!socketAuthId || String(socketAuthId) !== String(ownerAuthId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Only the owner can grant access' });
+
           return;
+
         }
 
+
+
         if (!isAuthUserInRoom(roomId, ownerAuthId) || !isAuthUserInRoom(roomId, controllerId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Owner/controller must be in meeting' });
+
           return;
+
         }
+
+
 
         const state = getOrInitOwnerState(roomId, ownerAuthId);
 
+
+
         // remove from pending
+
         state.pendingRequests = state.pendingRequests.filter((r) => String(r.userId) !== String(controllerId));
 
+
+
         const prev = state.activeController;
+
         if (prev && String(prev) !== String(controllerId)) {
+
           console.log(`[Access Switched] ${getDisplayName(roomId, prev)} → ${getDisplayName(roomId, controllerId)}`);
 
+
+
           const revokePayload = {
+
             meetingId: roomId,
+
             ownerId: String(ownerAuthId),
+
             revokedControllerId: String(prev),
+
             reason: 'switched',
+
           };
 
+
+
           io.to(roomId).emit('access-revoked', revokePayload);
+
           emitToUser(String(prev), 'access-revoked', revokePayload);
+
         }
+
+
 
         state.activeController = String(controllerId);
 
+
+
         console.log(`[Access Granted] ${getDisplayName(roomId, controllerId)} now controls ${getDisplayName(roomId, ownerAuthId)}`);
 
+
+
         const payload = {
+
           meetingId: roomId,
+
           ownerId: String(ownerAuthId),
+
           controllerId: String(controllerId),
+
         };
 
         io.to(roomId).emit('access-granted', payload);
+
         emitToUser(String(ownerAuthId), 'access-granted', payload);
+
         emitToUser(String(controllerId), 'access-granted', payload);
 
         emitAccessState(roomId, ownerAuthId);
+
       } catch (err) {
+
         console.error('[MeetingAccess] grant-access error', err && err.message);
+
       }
+
     });
 
+
+
     socket.on('reject-access', ({ meetingId, ownerId, requesterId }) => {
+
       try {
+
         const roomId = meetingId;
+
         const ownerAuthId = String(ownerId || '');
+
         const requesterAuthId = String(requesterId || '');
 
+
+
         if (!roomId || !ownerAuthId || !requesterAuthId) {
+
           socket.emit('access-error', { meetingId: roomId || null, message: 'meetingId, ownerId, requesterId are required' });
+
           return;
+
         }
+
+
 
         const socketAuthId = getAuthUserIdForSocket(socket);
+
         if (!socketAuthId || String(socketAuthId) !== String(ownerAuthId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Only the owner can reject access' });
+
           return;
+
         }
 
+
+
         const state = getOrInitOwnerState(roomId, ownerAuthId);
+
         state.pendingRequests = state.pendingRequests.filter((r) => String(r.userId) !== String(requesterAuthId));
+
+
 
         console.log(`[Access Rejected] ${getDisplayName(roomId, requesterAuthId)} rejected by ${getDisplayName(roomId, ownerAuthId)}`);
 
+
+
         const payload = {
+
           meetingId: roomId,
+
           ownerId: String(ownerAuthId),
+
           requesterId: String(requesterAuthId),
+
         };
 
+
+
         emitToUser(String(requesterAuthId), 'access-rejected', payload);
+
         io.to(roomId).emit('access-rejected', payload);
+
         emitAccessState(roomId, ownerAuthId);
+
       } catch (err) {
+
         console.error('[MeetingAccess] reject-access error', err && err.message);
+
       }
+
     });
 
+
+
     socket.on('revoke-access', ({ meetingId, ownerId }) => {
+
       try {
+
         const roomId = meetingId;
+
         const ownerAuthId = String(ownerId || '');
 
+
+
         if (!roomId || !ownerAuthId) {
+
           socket.emit('access-error', { meetingId: roomId || null, message: 'meetingId and ownerId are required' });
+
           return;
+
         }
+
+
 
         const socketAuthId = getAuthUserIdForSocket(socket);
+
         if (!socketAuthId || String(socketAuthId) !== String(ownerAuthId)) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'Only the owner can revoke access' });
+
           return;
+
         }
+
+
 
         const state = getOrInitOwnerState(roomId, ownerAuthId);
+
         if (!state.activeController) {
+
           socket.emit('access-error', { meetingId: roomId, message: 'No active controller to revoke' });
+
           return;
+
         }
 
+
+
         const revoked = state.activeController;
+
         state.activeController = null;
+
+
 
         console.log(`[Access Revoked] ${getDisplayName(roomId, revoked)} removed`);
 
+
+
         const payload = {
+
           meetingId: roomId,
+
           ownerId: String(ownerAuthId),
+
           revokedControllerId: String(revoked),
+
         };
 
         io.to(roomId).emit('access-revoked', payload);
+
         emitToUser(String(ownerAuthId), 'access-revoked', payload);
+
         emitToUser(String(revoked), 'access-revoked', payload);
+
         emitAccessState(roomId, ownerAuthId);
+
       } catch (err) {
+
         console.error('[MeetingAccess] revoke-access error', err && err.message);
+
       }
+
     });
 
     // Handle socket disconnection - clean up device registrations

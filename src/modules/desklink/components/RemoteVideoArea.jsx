@@ -17,7 +17,6 @@ export default function RemoteVideoArea({
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const [remoteCursor, setRemoteCursor] = useState({ x: 0, y: 0, visible: false });
-  const [hostActive, setHostActive] = useState(false);
   const throttlerRef = useRef(new MessageThrottler(16));
 
   useEffect(() => {
@@ -41,37 +40,6 @@ export default function RemoteVideoArea({
     }
   }, [stream]);
 
-  // PART 6: HANDLE HOST OVERRIDE GUARD MESSAGES
-  useEffect(() => {
-    // This would be set up through the WebRTC data channel
-    // For now, we'll add the logic to handle host-active/host-idle messages
-    const handleDataChannelMessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        console.log('[RemoteVideoArea] Data channel message:', message.type);
-        
-        if (message.type === 'host-active') {
-          setHostActive(true);
-        } else if (message.type === 'host-idle') {
-          setHostActive(false);
-        }
-      } catch (err) {
-        console.error('[RemoteVideoArea] Error parsing data channel message:', err);
-      }
-    };
-
-    // Set up data channel listener if available
-    if (window.dataChannel) {
-      window.dataChannel.addEventListener('message', handleDataChannelMessage);
-    }
-
-    return () => {
-      if (window.dataChannel) {
-        window.dataChannel.removeEventListener('message', handleDataChannelMessage);
-      }
-    };
-  }, [stream]);
-
   useEffect(() => {
     return () => {
       throttlerRef.current.clear();
@@ -86,17 +54,18 @@ export default function RemoteVideoArea({
   };
 
   const handleMouseMove = (e) => {
-    if (!permissions?.allowControl || hostActive) return;
-    
+    if (!permissions?.allowControl) return;
+
     const { x, y } = getNormalizedCoords(e);
     setRemoteCursor({ x: x * 100, y: y * 100, visible: true });
+
     const message = createMouseMoveMessage(x, y, sessionId, token);
     throttlerRef.current.throttle(message, onControlMessage);
   };
 
   const handleMouseClick = (e) => {
-    if (!permissions?.allowControl || hostActive) return;
-    
+    if (!permissions?.allowControl) return;
+
     const { x, y } = getNormalizedCoords(e);
     const button = e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right';
     const message = createMouseClickMessage(x, y, button, sessionId, token);
@@ -104,7 +73,7 @@ export default function RemoteVideoArea({
   };
 
   const handleWheel = (e) => {
-    if (!permissions?.allowControl || hostActive) return;
+    if (!permissions?.allowControl) return;
 
     e.preventDefault();
     const message = createMouseWheelMessage(e.deltaX, e.deltaY, sessionId, token);
@@ -167,18 +136,6 @@ export default function RemoteVideoArea({
               <span className="font-mono">{stats.packetsLost}</span>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Host Override Indicator */}
-      {hostActive && (
-        <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white bg-opacity-90 rounded-lg px-6 py-4 text-center">
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 bg-orange-500 rounded-full animate-pulse"></div>
-              <span className="text-white font-medium">Host is currently using the device...</span>
-            </div>
-          </div>
         </div>
       )}
 
