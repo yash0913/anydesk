@@ -3,15 +3,43 @@
  * Handles mouse, keyboard, and scroll events for remote desktop access
  */
 
-import { useEffect, useRef, useCallback } from 'react';
-import { useSocket } from '../../socket.js';
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { getSocket } from '../../../socket.js';
 
 export function useRemoteInputControl(roomId, hasControl, isHostOverride) {
-  const socket = useSocket();
+  const [socket, setSocket] = useState(null);
   const listenersRef = useRef(new Map());
   const videoElementRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const activityThrottleRef = useRef(null);
+  
+  // Initialize socket
+  useEffect(() => {
+    // Get auth token for socket connection
+    const authToken = (() => {
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('vd_user_profile') : null;
+        if (!raw) return null;
+        const profile = JSON.parse(raw);
+        return profile?.token || null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!authToken) return;
+
+    let active = true;
+
+    getSocket(authToken).then(socket => {
+      if (!active) return;
+      setSocket(socket);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   
   // Throttled activity detection for host override
   const detectActivity = useCallback(() => {

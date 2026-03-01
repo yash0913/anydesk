@@ -5,10 +5,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Monitor, User, Shield, Clock, Check, X, Crown, AlertCircle, Wifi, WifiOff } from 'lucide-react';
-import { useSocket } from '../../socket.js';
+import { getSocket } from '../../socket.js';
 
 export function RemoteAccessPanel({ roomId, userId, userName, isHost, participants = [] }) {
-  const socket = useSocket();
+  const [socket, setSocket] = React.useState(null);
   
   // Remote access state
   const [accessState, setAccessState] = useState({
@@ -25,6 +25,34 @@ export function RemoteAccessPanel({ roomId, userId, userName, isHost, participan
   const controlListenersRef = useRef(new Set());
   const isControllerRef = useRef(false);
   const hostActivityTimeoutRef = useRef(null);
+  
+  // Initialize socket
+  useEffect(() => {
+    // Get auth token for socket connection
+    const authToken = (() => {
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('vd_user_profile') : null;
+        if (!raw) return null;
+        const profile = JSON.parse(raw);
+        return profile?.token || null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!authToken) return;
+
+    let active = true;
+
+    getSocket(authToken).then(socket => {
+      if (!active) return;
+      setSocket(socket);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   
   // Initialize access state on join
   useEffect(() => {

@@ -2564,6 +2564,11 @@ function createSocketServer(server, clientOrigin) {
             }
           }
         });
+        io.to(roomId).emit('remote-access-state-sync', {
+          currentController: state.currentController,
+          pendingRequests: Array.from(state.pendingRequests),
+          hostOverride: state.hostOverride
+        });
 
       } catch (err) {
         console.error('[Remote Access] request error:', err);
@@ -2623,6 +2628,11 @@ function createSocketServer(server, clientOrigin) {
         
         // Broadcast updated state
         broadcastRemoteAccessState(roomId);
+        io.to(roomId).emit('remote-access-state-sync', {
+          currentController: state.currentController,
+          pendingRequests: Array.from(state.pendingRequests),
+          hostOverride: state.hostOverride
+        });
 
       } catch (err) {
         console.error('[Remote Access] accept error:', err);
@@ -2664,6 +2674,11 @@ function createSocketServer(server, clientOrigin) {
         
         // Broadcast updated state
         broadcastRemoteAccessState(roomId);
+        io.to(roomId).emit('remote-access-state-sync', {
+          currentController: state.currentController,
+          pendingRequests: Array.from(state.pendingRequests),
+          hostOverride: state.hostOverride
+        });
 
       } catch (err) {
         console.error('[Remote Access] reject error:', err);
@@ -2705,6 +2720,11 @@ function createSocketServer(server, clientOrigin) {
         
         // Broadcast updated state
         broadcastRemoteAccessState(roomId);
+        io.to(roomId).emit('remote-access-state-sync', {
+          currentController: state.currentController,
+          pendingRequests: Array.from(state.pendingRequests),
+          hostOverride: state.hostOverride
+        });
 
       } catch (err) {
         console.error('[Remote Access] revoke error:', err);
