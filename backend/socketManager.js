@@ -2757,8 +2757,8 @@ function createSocketServer(server, clientOrigin) {
           roomId: roomId
         };
         
-        requesterSocket.emit('remote-access-accepted', acceptPayload);
-        requesterSocket.emit('desklink-remote-response', acceptPayload);
+        io.to(roomId).emit('remote-access-accepted', acceptPayload);
+        io.to(roomId).emit('desklink-remote-response', acceptPayload);
         
         // Emit to all in room (including host)
         io.to(roomId).emit('access-granted', {

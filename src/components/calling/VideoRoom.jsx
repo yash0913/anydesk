@@ -34,7 +34,7 @@ import IncomingRequestModal from '../../modules/desklink/components/IncomingRequ
 
 import { getSocket } from '../../socket.js';
 
-import { useAuth } from "../../modules/auth/context/AuthContext.jsx";
+import { useAuth } from "../../modules/auth/hooks/useAuth.js";
 
 import { MousePointer2 } from 'lucide-react';
 
