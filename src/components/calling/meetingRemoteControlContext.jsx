@@ -1078,16 +1078,31 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
         const role = String(payload.role);
 
         const config = {
+
           sessionId: payload.sessionId,
+
           authToken: token,
+
           sessionToken: payload.token || payload.callerToken || payload.receiverToken || payload.sessionToken,
+
+          role: role,
+
+          targetUserId: role === 'caller' ? payload.receiverUserId : payload.callerUserId,
+
           localUserId: localAuthUserId,
+
           localDeviceId: role === 'caller'
+
             ? (payload.callerDeviceId || payload.viewerDeviceId)
+
             : (payload.receiverDeviceId || payload.hostDeviceId),
+
           remoteDeviceId: role === 'caller'
+
             ? (payload.receiverDeviceId || payload.hostDeviceId)
+
             : (payload.callerDeviceId || payload.viewerDeviceId),
+
         };
 
         setActiveSessionId(payload.sessionId);
@@ -1109,6 +1124,8 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
         console.log('[MeetingRemoteControl] WebRTC config:', config);
 
         console.log('[MeetingRemoteControl] role:', role);
+
+        console.log('[MeetingRemoteControl] targetUserId:', config.targetUserId);
 
         console.log('[MeetingRemoteControl] localDeviceId:', config.localDeviceId);
 

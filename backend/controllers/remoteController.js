@@ -486,6 +486,10 @@ const acceptRemoteSession = async (req, res) => {
 
       sessionId: session.sessionId,
 
+      callerUserId: session.callerUserId,
+
+      receiverUserId: session.receiverUserId,
+
       callerDeviceId: session.callerDeviceId,     // viewer
 
       receiverDeviceId: session.receiverDeviceId, // host (agent)
@@ -514,13 +518,13 @@ const acceptRemoteSession = async (req, res) => {
 
     };
 
-    
 
-    console.log('[desklink-session-start emit]', { 
 
-      sessionId: session.sessionId, 
+    console.log('[desklink-session-start emit]', {
 
-      role: 'caller', 
+      sessionId: session.sessionId,
+
+      role: 'caller',
 
       hasToken: !!callerToken,
 
@@ -530,7 +534,7 @@ const acceptRemoteSession = async (req, res) => {
 
       callerUserId: session.callerUserId,
 
-      callerDeviceId: session.callerDeviceId 
+      callerDeviceId: session.callerDeviceId
 
     });
 
@@ -546,11 +550,11 @@ const acceptRemoteSession = async (req, res) => {
 
     };
 
-    console.log('[desklink-session-start emit]', { 
+    console.log('[desklink-session-start emit]', {
 
-      sessionId: session.sessionId, 
+      sessionId: session.sessionId,
 
-      role: 'receiver', 
+      role: 'receiver',
 
       hasToken: !!receiverPayload.token,
 
@@ -558,17 +562,19 @@ const acceptRemoteSession = async (req, res) => {
 
       tokenLength: receiverPayload.token?.length,
 
-      receiverDeviceId: session.receiverDeviceId 
+      receiverDeviceId: session.receiverDeviceId
 
     });
 
     console.log('[desklink-session-start] Full receiver payload:', JSON.stringify(receiverPayload).substring(0, 200));
 
-    
+
 
     // Emit to web user (caller) - they create offer and send screen capture
 
     if (isMeetingSession) {
+
+      console.log(`[Flow-Trace] Emitting session-start to Requester: ${session.callerUserId}`);
 
       emitToUser(session.callerUserId, 'desklink-session-start', callerPayload);
 
@@ -581,6 +587,8 @@ const acceptRemoteSession = async (req, res) => {
     // Emit to phone user (receiver) - they wait for offer and watch screen
 
     if (isMeetingSession) {
+
+      console.log(`[Flow-Trace] Emitting session-start to Host: ${session.receiverUserId}`);
 
       emitToUser(session.receiverUserId, 'desklink-session-start', receiverPayload);
 

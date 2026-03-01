@@ -32,7 +32,7 @@ import IncomingRequestModal from '../../modules/desklink/components/IncomingRequ
 
 import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
 import { getSocket } from '../../socket.js';
-import { MousePointer2 } from 'lucide-react';
+
 
 import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
 
@@ -236,6 +236,10 @@ function VideoRoomInner({
 
     console.log('[VideoRoom] permissions:', permissions);
 
+    console.log('[VideoRoom] sessionRole:', sessionConfig?.role);
+
+    console.log('[VideoRoom] sessionTarget:', sessionConfig?.targetUserId);
+
     console.log('[VideoRoom] Should show RemoteVideoArea:', !!(remoteDesktopStream && sessionConfig));
 
 
@@ -253,20 +257,6 @@ function VideoRoomInner({
     }
 
   }, [isRemoteControlOpen, remoteDesktopStream, sessionConfig, permissions]);
-
-
-
-  const [isAccessPanelOpen, setIsAccessPanelOpen] = React.useState(false);
-
-  const [accessStateByOwner, setAccessStateByOwner] = React.useState({});
-
-  const [accessPopup, setAccessPopup] = React.useState(null);
-
-  const [requestingByTarget, setRequestingByTarget] = React.useState({});
-
-
-
-
 
 
 
@@ -355,298 +345,6 @@ function VideoRoomInner({
     return map;
 
   }, [allParticipants]);
-
-
-
-  const pendingIncomingCount = React.useMemo(() => {
-
-    if (!localAuthUserId) return 0;
-
-    const mine = accessStateByOwner[String(localAuthUserId)];
-
-    const pending = mine && Array.isArray(mine.pendingRequests) ? mine.pendingRequests : [];
-
-    return pending.length;
-
-  }, [accessStateByOwner, localAuthUserId]);
-
-
-
-  const myAccessState = React.useMemo(() => {
-
-    if (!localAuthUserId) return { ownerId: null, activeController: null, pendingRequests: [] };
-
-    const mine = accessStateByOwner[String(localAuthUserId)] || null;
-
-    return {
-
-      ownerId: localAuthUserId,
-
-      activeController: mine ? mine.activeController || null : null,
-
-      pendingRequests: mine && Array.isArray(mine.pendingRequests) ? mine.pendingRequests : [],
-
-    };
-
-  }, [accessStateByOwner, localAuthUserId]);
-
-
-
-  useEffect(() => {
-
-    const socket = meetingSocket;
-
-    if (!socket) return;
-
-
-
-    const handleAccessState = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      if (!payload.ownerId) return;
-
-      const ownerId = String(payload.ownerId);
-
-      setAccessStateByOwner((prev) => ({
-
-        ...prev,
-
-        [ownerId]: {
-
-          ownerId,
-
-          activeController: payload.activeController || null,
-
-          pendingRequests: Array.isArray(payload.pendingRequests) ? payload.pendingRequests : [],
-
-        },
-
-      }));
-
-    };
-
-
-
-    const handleIncoming = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      if (localAuthUserId && payload.ownerId && String(payload.ownerId) !== String(localAuthUserId)) return;
-
-      setAccessPopup({
-
-        requesterId: payload.requesterId,
-
-        requestedAt: payload.requestedAt || Date.now(),
-
-      });
-
-    };
-
-
-
-    const handleGranted = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      const ownerId = payload.ownerId;
-
-      setRequestingByTarget((prev) => {
-
-        const next = { ...prev };
-
-        if (ownerId) delete next[String(ownerId)];
-
-        return next;
-
-      });
-
-    };
-
-
-
-    const handleRevoked = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      // state is already synced via access-state; keep minimal local cleanup
-
-    };
-
-
-
-    const handleRejected = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      const ownerId = payload.ownerId;
-
-      setRequestingByTarget((prev) => {
-
-        const next = { ...prev };
-
-        if (ownerId) delete next[String(ownerId)];
-
-        return next;
-
-      });
-
-    };
-
-
-
-    const handleErr = (payload) => {
-
-      if (!payload || String(payload.meetingId || '') !== String(roomId)) return;
-
-      console.warn('[access-error]', payload.message);
-
-    };
-
-
-
-    socket.on('access-state', handleAccessState);
-
-    socket.on('incoming-access-request', handleIncoming);
-
-    socket.on('access-granted', handleGranted);
-
-    socket.on('access-revoked', handleRevoked);
-
-    socket.on('access-rejected', handleRejected);
-
-    socket.on('access-error', handleErr);
-
-    return () => {
-
-      socket.off('access-state', handleAccessState);
-
-      socket.off('incoming-access-request', handleIncoming);
-
-      socket.off('access-granted', handleGranted);
-
-      socket.off('access-revoked', handleRevoked);
-
-      socket.off('access-rejected', handleRejected);
-
-      socket.off('access-error', handleErr);
-
-    };
-
-  }, [roomId, localAuthUserId]);
-
-
-
-  const requestAccess = React.useCallback(
-
-    (targetAuthUserId) => {
-
-      const socket = meetingSocket;
-
-      if (!socket) return;
-
-      if (!localAuthUserId || !targetAuthUserId) return;
-
-      if (String(localAuthUserId) === String(targetAuthUserId)) return;
-
-
-
-      setRequestingByTarget((prev) => ({ ...prev, [String(targetAuthUserId)]: true }));
-
-
-
-      socket.emit('request-access', {
-
-        meetingId: roomId,
-
-        targetUserId: String(targetAuthUserId),
-
-        requesterId: String(localAuthUserId),
-
-      });
-
-    },
-
-    [roomId, localAuthUserId]
-
-  );
-
-
-
-  const acceptRequest = React.useCallback(
-
-    (requesterAuthUserId) => {
-
-      const socket = meetingSocket;
-
-      if (!socket) return;
-
-      if (!localAuthUserId) return;
-
-      socket.emit('grant-access', {
-
-        meetingId: roomId,
-
-        ownerId: String(localAuthUserId),
-
-        requesterId: String(requesterAuthUserId),
-
-      });
-
-    },
-
-    [roomId, localAuthUserId]
-
-  );
-
-
-
-  const rejectRequest = React.useCallback(
-
-    (requesterAuthUserId) => {
-
-      const socket = meetingSocket;
-
-      if (!socket) return;
-
-      if (!localAuthUserId) return;
-
-      socket.emit('reject-access', {
-
-        meetingId: roomId,
-
-        ownerId: String(localAuthUserId),
-
-        requesterId: String(requesterAuthUserId),
-
-      });
-
-    },
-
-    [roomId, localAuthUserId]
-
-  );
-
-
-
-  const revokeAccess = React.useCallback(() => {
-
-    const socket = meetingSocket;
-
-    if (!socket) return;
-
-    if (!localAuthUserId) return;
-
-    socket.emit('revoke-access', {
-
-      meetingId: roomId,
-
-      ownerId: String(localAuthUserId),
-
-    });
-
-  }, [roomId, localAuthUserId]);
 
 
 
@@ -916,260 +614,6 @@ function VideoRoomInner({
 
     <div className="flex flex-col w-full h-screen bg-slate-950 text-white overflow-hidden relative">
 
-      <div className="absolute top-4 right-4 z-50 pointer-events-auto">
-
-        <button
-
-          type="button"
-
-          onClick={() => setIsAccessPanelOpen((p) => !p)}
-
-          className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900/80 border border-slate-700 hover:bg-slate-800"
-
-          title="Remote Access"
-
-        >
-
-          <MousePointer2 className="w-5 h-5 text-slate-200" />
-
-          {pendingIncomingCount > 0 && (
-
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center border border-slate-900">
-
-              {pendingIncomingCount}
-
-            </span>
-
-          )}
-
-        </button>
-
-      </div>
-
-
-
-      {isAccessPanelOpen && (
-
-        <div className="pointer-events-auto absolute top-16 right-4 z-50 w-[560px] max-w-[92vw] rounded-xl bg-slate-900/95 border border-slate-700 shadow-2xl overflow-hidden">
-
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-
-            <div className="text-sm font-semibold">Remote Access</div>
-
-            <button
-
-              type="button"
-
-              onClick={() => setIsAccessPanelOpen(false)}
-
-              className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded border border-slate-700 hover:border-slate-500"
-
-            >
-
-              Close
-
-            </button>
-
-          </div>
-
-          <div className="grid grid-cols-2 gap-0">
-
-            <div className="border-r border-slate-800">
-
-              <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-slate-500 font-bold">Incoming Requests</div>
-
-              <div className="px-4 pb-4 space-y-2 max-h-[340px] overflow-y-auto">
-
-                {String(myAccessState.ownerId || '') !== String(localAuthUserId || '') ? (
-
-                  <div className="text-slate-500 text-xs">You can manage requests only for your own PC.</div>
-
-                ) : myAccessState.pendingRequests && myAccessState.pendingRequests.length > 0 ? (
-
-                  myAccessState.pendingRequests.map((r) => {
-
-                    const p = participantsByAuthId.get(String(r.userId));
-
-                    const label = (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(r.userId));
-
-                    return (
-
-                      <div key={String(r.userId)} className="flex items-center justify-between rounded-md bg-slate-800/70 px-2 py-2">
-
-                        <div className="text-xs text-slate-100 font-medium">{label}</div>
-
-                        <div className="flex items-center gap-2">
-
-                          <button
-
-                            type="button"
-
-                            onClick={() => acceptRequest(String(r.userId))}
-
-                            className="text-[10px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
-
-                          >
-
-                            Accept
-
-                          </button>
-
-                          <button
-
-                            type="button"
-
-                            onClick={() => rejectRequest(String(r.userId))}
-
-                            className="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-
-                          >
-
-                            Reject
-
-                          </button>
-
-                        </div>
-
-                      </div>
-
-                    );
-
-                  })
-
-                ) : (
-
-                  <div className="text-slate-500 text-xs">No incoming requests.</div>
-
-                )}
-
-              </div>
-
-            </div>
-
-            <div>
-
-              <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-slate-500 font-bold">Current Access State</div>
-
-              <div className="px-4 pb-4 space-y-3">
-
-                <div className="rounded-md bg-slate-800/70 px-3 py-3">
-
-                  <div className="text-[11px] text-slate-400">Currently controlling</div>
-
-                  <div className="text-sm font-semibold text-slate-100">
-
-                    {myAccessState.activeController
-
-                      ? (() => {
-
-                        const p = participantsByAuthId.get(String(myAccessState.activeController));
-
-                        return (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(myAccessState.activeController));
-
-                      })()
-
-                      : 'No one'}
-
-                  </div>
-
-                  <div className="mt-2">
-
-                    <button
-
-                      type="button"
-
-                      onClick={revokeAccess}
-
-                      disabled={
-
-                        !myAccessState.activeController ||
-
-                        String(myAccessState.ownerId || '') !== String(localAuthUserId || '')
-
-                      }
-
-                      className={`text-xs px-3 py-1.5 rounded-md text-white ${!myAccessState.activeController || String(myAccessState.ownerId || '') !== String(localAuthUserId || '')
-
-                        ? 'bg-slate-700 opacity-50 cursor-not-allowed'
-
-                        : 'bg-red-600 hover:bg-red-500'
-
-                        }`}
-
-                    >
-
-                      Revoke Access
-
-                    </button>
-
-                  </div>
-
-                </div>
-
-
-
-                {String(myAccessState.ownerId || '') === String(localAuthUserId || '') && (
-
-                  <div className="rounded-md bg-slate-800/50 px-3 py-3">
-
-                    <div className="text-[11px] text-slate-400">Quick switch</div>
-
-                    <div className="mt-2 space-y-2 max-h-[180px] overflow-y-auto">
-
-                      {(myAccessState.pendingRequests || []).map((r) => {
-
-                        const p = participantsByAuthId.get(String(r.userId));
-
-                        const label = (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(r.userId));
-
-                        return (
-
-                          <button
-
-                            key={String(r.userId)}
-
-                            type="button"
-
-                            onClick={() => acceptRequest(String(r.userId))}
-
-                            className="w-full flex items-center justify-between rounded-md bg-slate-900/60 hover:bg-slate-900 px-2 py-2"
-
-                          >
-
-                            <span className="text-xs text-slate-200 font-medium">{label}</span>
-
-                            <span className="text-[10px] text-slate-400">Accept & Switch</span>
-
-                          </button>
-
-                        );
-
-                      })}
-
-                      {(!myAccessState.pendingRequests || myAccessState.pendingRequests.length === 0) && (
-
-                        <div className="text-slate-500 text-xs">No pending users.</div>
-
-                      )}
-
-                    </div>
-
-                  </div>
-
-                )}
-
-              </div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      )}
-
-
-
       {reactions && reactions.length > 0 && (
 
         <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center z-30 overflow-visible">
@@ -1208,167 +652,180 @@ function VideoRoomInner({
 
 
 
-      {/* In-Meeting Remote Control Panel (VisionDesk Control Mode) */}
+      {/* In-Meeting Remote Control Panel (Merged VisionDesk Control Mode) */}
       {/* HIDE when remote desktop is active in main stage */}
       {isRemoteControlOpen && !isRemoteDesktopActive && (
-
-        <div className="pointer-events-auto absolute bottom-28 right-6 z-40 w-[420px] max-w-[90vw]">
-
-          <div className="bg-slate-900/95 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[260px]">
-
+        <div className="pointer-events-auto absolute bottom-28 right-6 z-40 w-[600px] max-w-[95vw]">
+          <div className="bg-slate-900/95 border border-slate-700 rounded-2xl shadow-2xl flex flex-col max-h-[500px]">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800">
-
               <div className="flex flex-col">
-
-                <span className="text-xs font-semibold text-slate-100">Remote Control</span>
-
+                <span className="text-xs font-semibold text-slate-100">VisionDesk / Remote Control</span>
                 <span className="text-[10px] text-slate-400">In-meeting VisionDesk Control Mode</span>
-
               </div>
-
               <button
-
                 type="button"
-
                 onClick={toggleRemoteControlPanel}
-
                 className="text-slate-400 hover:text-slate-100 text-xs px-2 py-1 rounded-md hover:bg-slate-800"
-
               >
-
                 Close
-
               </button>
-
             </div>
-
-            <div className="flex-1 bg-slate-950/80 p-2">
-
+            <div className="flex-1 overflow-y-auto p-0">
               {remoteDesktopStream ? (
-
-                <RemoteVideoArea
-
-                  stream={remoteDesktopStream}
-
-                  onControlMessage={sendControlMessage}
-
-                  sessionId={sessionConfig?.sessionId || ''}
-
-                  token={sessionConfig?.sessionToken || ''}
-
-                  permissions={permissions}
-
-                  stats={remoteStats}
-
-                />
-
+                <div className="p-2 h-64">
+                  <RemoteVideoArea
+                    stream={remoteDesktopStream}
+                    onControlMessage={sendControlMessage}
+                    sessionId={sessionConfig?.sessionId || ''}
+                    token={sessionConfig?.sessionToken || ''}
+                    permissions={permissions}
+                    stats={remoteStats}
+                  />
+                </div>
               ) : (
-
-                <div className="flex flex-col h-full text-xs text-slate-300">
-
-                  <div className="mb-2 text-[11px] font-medium text-slate-200">Request control from someone in this meeting</div>
-
-                  <div className="flex-1 overflow-auto rounded-lg bg-slate-900/70 border border-slate-800 p-2 space-y-1">
-
-                    {controllerCandidates.length === 0 ? (
-
-                      <div className="text-slate-500 text-[11px] text-center py-6">
-
-                        Remote control unavailable: no participants with a resolved backend userId.
-
-                      </div>
-
-                    ) : (
-
-                      controllerCandidates.map((p) => {
-
-                        const isAgentOnline = agentStatuses[p.id] === 'online';
-
-                        const statusColor = isAgentOnline ? 'bg-emerald-500' : 'bg-slate-600';
-
-                        const statusText = isAgentOnline ? 'Ready' : 'Agent Offline';
-
-
-
-                        return (
-
-                          <div
-
-                            key={p.id}
-
-                            className="flex items-center justify-between rounded-md bg-slate-800/80 px-2 py-1"
-
-                          >
-
-                            <div className="flex flex-col">
-
-                              <span className="text-[11px] font-medium text-slate-100 flex items-center gap-2">
-
-                                {p.name || 'Participant'}
-
-                                <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} title={statusText}></span>
-
-                              </span>
-
-                              <span className="text-[10px] text-slate-500 break-all">
-
-                                {p.targetUserId ? (
-
-                                  isAgentOnline ? 'Agent Ready' : 'Agent Not Detected'
-
-                                ) : 'Not Registered'}
-
-                              </span>
-
-                            </div>
-
-                            <div className="flex flex-col items-end gap-0.5">
-                              <button
-                                className="bg-blue-500 text-white px-3 py-1 rounded text-[10px] disabled:opacity-50 hover:bg-blue-400"
-                                disabled={!p.targetUserId || !isAgentOnline || !meetingSocketReady}
-                                onClick={() => {
-                                  if (!meetingSocketReady) {
-                                    console.warn('[VideoRoom] Request Access clicked but meetingSocket not ready yet');
-                                    return;
-                                  }
-                                  console.log('[VideoRoom] Request Control clicked for', p.id, 'targetUserId:', p.targetUserId);
-                                  requestControlForUser({
-                                    targetUserId: p.targetUserId,
-                                    targetName: p.name || p.userName,
-                                    senderAuthId: localAuthUserId
-                                  });
-                                }}
-                              >
-                                {meetingSocketReady ? 'Request Control' : 'Connecting...'}
-                              </button>
-                            </div>
-
+                <div className="grid grid-cols-2 gap-0 w-full min-w-[500px]">
+                  <div className="border-r border-slate-800 pt-2 flex flex-col">
+                    <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-slate-500 font-bold min-h-[30px]">Request control</div>
+                    <div className="px-4 pb-4 space-y-1 max-h-[160px] overflow-y-auto">
+                      {!sessionConfig?.targetUserId ? (
+                        controllerCandidates.length === 0 ? (
+                          <div className="text-slate-500 text-[11px] py-4 text-center">
+                            Remote control unavailable: no participants with a resolved backend userId.
                           </div>
+                        ) : (
+                          controllerCandidates.map((p) => {
+                            const isAgentOnline = agentStatuses[p.id] === 'online';
+                            const statusColor = isAgentOnline ? 'bg-emerald-500' : 'bg-slate-600';
+                            const statusText = isAgentOnline ? 'Ready' : 'Agent Offline';
+                            return (
+                              <div key={p.id} className="flex items-center justify-between rounded-md bg-slate-800/80 px-2 py-1">
+                                <div className="flex flex-col overflow-hidden">
+                                  <span className="text-[11px] font-medium text-slate-100 flex items-center gap-1.5 truncate">
+                                    {p.name || 'Participant'}
+                                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColor}`} title={statusText}></span>
+                                  </span>
+                                </div>
+                                <button
+                                  className="bg-blue-600 text-white px-2 py-1 ml-1 rounded text-[10px] disabled:opacity-50 hover:bg-blue-500 flex-shrink-0"
+                                  disabled={!p.targetUserId || !isAgentOnline || !meetingSocketReady}
+                                  onClick={() => {
+                                    if (meetingSocketReady) {
+                                      requestControlForUser({
+                                        targetUserId: p.targetUserId,
+                                        targetName: p.name || p.userName,
+                                        senderAuthId: localAuthUserId
+                                      });
+                                    }
+                                  }}
+                                >
+                                  {meetingSocketReady ? 'Request' : 'Wait...'}
+                                </button>
+                              </div>
+                            );
+                          })
+                        )
+                      ) : (
+                        <div className="text-slate-500 text-[11px] text-center py-4">
+                          You are already controlling a device.
+                        </div>
+                      )}
+                    </div>
 
-                        );
-
-                      })
-
-                    )
-                    }
-
+                    <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-slate-500 font-bold border-t border-slate-800 min-h-[30px]">Incoming Requests</div>
+                    <div className="px-4 pb-4 space-y-2 max-h-[160px] overflow-y-auto">
+                      {incomingRequest ? (
+                        <div className="flex items-center justify-between rounded-md bg-slate-800/70 px-2 py-2">
+                          <div className="text-xs text-slate-100 font-medium truncate overflow-hidden" title={incomingRequest.callerName || 'Unknown User'}>
+                            {incomingRequest.callerName || 'Unknown User'}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0 ml-1">
+                            <button
+                              type="button"
+                              onClick={() => acceptIncomingRequest(incomingRequest.requestId)}
+                              className="text-[10px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => rejectIncomingRequest(incomingRequest.requestId)}
+                              className="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-slate-500 text-xs text-center py-4 text-[10px]">No incoming requests.</div>
+                      )}
+                    </div>
                   </div>
 
+                  <div className="pt-2 flex flex-col">
+                    <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-slate-500 font-bold min-h-[30px]">Current Access State</div>
+                    <div className="px-4 pb-4 space-y-3">
+                      <div className="rounded-md bg-slate-800/70 px-3 py-3 border border-slate-700">
+                        <div className="text-[11px] text-slate-400">
+
+                          {sessionConfig?.role === 'receiver' ? 'Being controlled by' : 'Currently controlling'}
+
+                        </div>
+                        <div className="text-sm font-semibold text-emerald-400 mt-1">
+                          {sessionConfig?.targetUserId ? (
+                            (() => {
+                              const p = (allParticipants || []).find(x => String(x.authUserId) === String(sessionConfig.targetUserId));
+                              return (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(sessionConfig.targetUserId));
+                            })()
+                          ) : (
+                            sessionConfig?.sessionId ? 'Active Session' : 'No one'
+                          )}
+                        </div>
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (sendControlMessage) {
+                                sendControlMessage({ type: 'end_session' });
+                              }
+                            }}
+                            disabled={!sessionConfig}
+                            className={`w-full text-xs px-3 py-2 rounded-md text-white transition-colors duration-200 ${!sessionConfig
+                              ? 'bg-slate-700 opacity-50 cursor-not-allowed'
+                              : 'bg-red-600 hover:bg-red-500'
+                              }`}
+                          >
+                            Revoke Access
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-md bg-slate-800/50 px-3 py-3 border border-slate-700">
+                        <div className="text-[11px] text-slate-400">Quick switch</div>
+                        <div className="mt-2 space-y-2 max-h-[180px] overflow-y-auto">
+                          {incomingRequest ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                acceptIncomingRequest(incomingRequest.requestId);
+                              }}
+                              className="w-full flex items-center justify-between rounded-md bg-slate-700 hover:bg-slate-600 px-2 py-2 transition-colors duration-200"
+                            >
+                              <span className="text-xs text-slate-100 font-medium truncate" title={incomingRequest.callerName || 'Unknown User'}>{incomingRequest.callerName || 'Unknown User'}</span>
+                              <span className="text-[10px] text-emerald-400 ml-1 flex-shrink-0 font-semibold">Accept</span>
+                            </button>
+                          ) : (
+                            <div className="text-slate-500 text-xs text-center py-2 text-[10px]">No pending requests.</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-
               )}
-
             </div>
-
           </div>
-
         </div>
-
       )}
-
-
-
-
 
       {/* Main Content Area */}
 
@@ -1430,32 +887,6 @@ function VideoRoomInner({
 
                       )}
 
-                      {p.id !== userId && p.authUserId && localAuthUserId && (
-
-                        <button
-
-                          type="button"
-
-                          onClick={() => requestAccess(String(p.authUserId))}
-
-                          disabled={!!requestingByTarget[String(p.authUserId)]}
-
-                          className={`text-[10px] px-2 py-1 rounded border ${requestingByTarget[String(p.authUserId)]
-
-                            ? 'border-slate-600 text-slate-400 cursor-not-allowed'
-
-                            : 'border-purple-500/60 text-purple-100 hover:bg-purple-600/20'
-
-                            }`}
-
-                        >
-
-                          {requestingByTarget[String(p.authUserId)] ? 'Request Sent' : 'Request Access'}
-
-                        </button>
-
-                      )}
-
                     </div>
 
                   </div>
@@ -1471,88 +902,6 @@ function VideoRoomInner({
                 </div>
 
               )}
-
-            </div>
-
-          </div>
-
-        )}
-
-
-
-        {accessPopup && !!localAuthUserId && (
-
-          <div className="pointer-events-auto absolute top-16 left-1/2 -translate-x-1/2 z-50">
-
-            <div className="rounded-xl bg-slate-900/95 border border-slate-700 shadow-xl px-4 py-3 flex items-center gap-3">
-
-              <div className="text-xs text-slate-200">
-
-                {(() => {
-
-                  const p = participantsByAuthId.get(String(accessPopup.requesterId));
-
-                  const label = (p && (p.name || p.userName)) ? (p.name || p.userName) : shortId(String(accessPopup.requesterId));
-
-                  return `${label} is requesting access to your PC`;
-
-                })()}
-
-              </div>
-
-              <button
-
-                type="button"
-
-                onClick={() => {
-
-                  acceptRequest(String(accessPopup.requesterId));
-
-                  setAccessPopup(null);
-
-                }}
-
-                className="text-[10px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
-
-              >
-
-                Accept
-
-              </button>
-
-              <button
-
-                type="button"
-
-                onClick={() => {
-
-                  rejectRequest(String(accessPopup.requesterId));
-
-                  setAccessPopup(null);
-
-                }}
-
-                className="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-
-              >
-
-                Reject
-
-              </button>
-
-              <button
-
-                type="button"
-
-                onClick={() => setAccessPopup(null)}
-
-                className="text-[10px] px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-slate-500"
-
-              >
-
-                Dismiss
-
-              </button>
 
             </div>
 
@@ -1962,20 +1311,7 @@ function VideoRoomInner({
 
 }
 
-const DiagnosticLogger = ({ p, requestingByTarget, meetingSocketReady, sessionConfig, remoteDesktopStream, isHost }) => {
-  React.useEffect(() => {
-    console.log('[RemoteControl-Diag]', {
-      participant: p.name || p.userName,
-      authUserId: p.authUserId,
-      sessionConfig: !!sessionConfig,
-      remoteDesktopStream: !!remoteDesktopStream,
-      isHost,
-      socketConnected: meetingSocketReady,
-      disabledCondition: !!requestingByTarget[String(p.authUserId)] || !meetingSocketReady
-    });
-  }, [p.name, p.userName, p.authUserId, requestingByTarget, meetingSocketReady, sessionConfig, remoteDesktopStream, isHost]);
-  return null;
-};
+
 
 
 export default function VideoRoom(props) {
