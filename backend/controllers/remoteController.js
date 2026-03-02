@@ -484,7 +484,26 @@ const acceptRemoteSession = async (req, res) => {
 
 
 
+    session.status = 'accepted';
+
+    session.audit.push({
+      event: 'accepted',
+      userId: req.user._id,
+      details: { permissions, selectedMonitor, resolution },
+    });
+
     await session.save();
+
+    const sessionMetadata = {
+      sessionId: session.sessionId,
+      callerUserId: session.callerUserId,
+      receiverUserId: session.receiverUserId,
+      callerDeviceId: session.callerDeviceId,     // viewer
+      receiverDeviceId: session.receiverDeviceId, // host (agent)
+      permissions: session.permissions,
+      selectedMonitor: session.selectedMonitor,
+      resolution: session.resolution,
+    };
 
 
 
