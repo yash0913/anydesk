@@ -1271,11 +1271,24 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
     // Listen for access-revoked (Quick Switch: controller lost control)
     const handleAccessRevoked = (payload) => {
       if (String(payload.revokedControllerId) === String(localAuthUserId)) {
-        // We were the controller and got revoked
+        console.log('[MeetingRemoteControl] 🛑 Access REVOKED by host. Cleaning up...');
+
+        // Stop WebRTC and clear stream
         stopSession();
+
+        // Clear session state
         setSessionConfig(null);
         setActiveSessionId(null);
-        addLog('Control transferred by host', 'system');
+        setActiveControllerName(null);
+
+        // Close the panel
+        setIsPanelOpen(false);
+
+        // Local feedback
+        addLog('Remote control revoked by host (transferred)', 'system');
+
+        // If we are showing the large screen share view, it should unmount now
+        // since remoteStream (from stopSession) is now null.
       }
     };
 

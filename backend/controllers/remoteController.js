@@ -6,7 +6,7 @@ const Device = require('../models/Device');
 
 const ContactLink = require('../models/ContactLink');
 
-const { emitToUser, emitToDevice } = require('../socketManager');
+const { emitToUser, emitToDevice, handleMeetingAccessTransfer } = require('../socketManager');
 
 const { createSessionToken } = require('../utils/sessionToken');
 
@@ -468,31 +468,53 @@ const acceptRemoteSession = async (req, res) => {
 
     }
 
-    session.audit.push({
+    // If this session is from a meeting, handle switch/revocation
 
-      event: 'accepted',
+    if (session.fromMeeting) {
 
-      userId: req.user._id,
+      console.log(`[API Accept] Meeting session switch for host ${session.receiverUserId}`);
 
-      details: { permissions, selectedMonitor, resolution },
+      handleMeetingAccessTransfer(session.receiverUserId, session.callerUserId);
 
-    });
+    }
+
+
+
+    session.sessionToken = callerToken; // Use caller token as primary for DB for now
+
+
 
     await session.save();
 
 
 
-    const sessionMetadata = {
+    // Notify caller
+
+    emitToUser(session.callerUserId, 'desklink-remote-response', {
 
       sessionId: session.sessionId,
 
-      callerUserId: session.callerUserId,
+      status: 'accepted',
 
-      receiverUserId: session.receiverUserId,
+      sessionToken: callerToken,
 
-      callerDeviceId: session.callerDeviceId,     // viewer
+    });
 
-      receiverDeviceId: session.receiverDeviceId, // host (agent)
+
+
+    // Notify agent to start session
+
+    emitToDevice(session.receiverDeviceId, 'desklink-session-start', {
+
+      sessionId: session.sessionId,
+
+      callerUserId: String(session.callerUserId),
+
+      receiverUserId: String(session.receiverUserId),
+
+      token: receiverToken,
+
+      fromDeviceId: session.callerDeviceId,
 
       permissions: session.permissions,
 
@@ -500,7 +522,7 @@ const acceptRemoteSession = async (req, res) => {
 
       resolution: session.resolution,
 
-    };
+    });
 
 
 

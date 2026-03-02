@@ -37,6 +37,82 @@ const pendingSignalsByDevice = new Map(); // Map<deviceId, Array<{event,payload}
 const metrics = { activeSessions: 0, offersRelayed: 0, iceFailures: 0, datachannelMsgs: 0 };
 const userSockets = new Map(); // Map<userId, Set<socketId>>
 const activeControllers = new Map(); // Map<hostUserId, { controllerId, meetingId, deviceId }>
+const meetingAccessState = new Map(); // Map<meetingId, Map<hostId, { activeController, pendingRequests }>>
+
+/**
+ * Shared logic for transferring/revoking meeting-based remote access.
+ * Called by both socket handlers and REST API.
+ */
+function handleMeetingAccessTransfer(hostUserId, newControllerId, meetingId = null) {
+  if (!ioInstance) return;
+
+  const hostId = String(hostUserId);
+  const newCtrlId = String(newControllerId);
+
+  // 1. Resolve meeting context if not provided
+  let roomId = meetingId;
+  const existing = activeControllers.get(hostId);
+  if (!roomId && existing) {
+    roomId = existing.meetingId;
+  }
+
+  if (existing && existing.controllerId !== newCtrlId) {
+    const prev = existing.controllerId;
+    console.log(`[Access Transfer] Revoking ${prev} for host ${hostId}`);
+
+    const revokePayload = {
+      meetingId: roomId || null,
+      ownerId: hostId,
+      revokedControllerId: prev,
+      reason: 'switched',
+    };
+
+    // Notify the revoked user
+    if (roomId) ioInstance.to(roomId).emit('access-revoked', revokePayload);
+    emitToUser(prev, 'access-revoked', revokePayload);
+
+    // Notify agent to detach
+    const hostDevices = getDeviceRegistrySnapshotForUser(hostId);
+    const agentDev = hostDevices.find(d => d.deviceType === 'native-agent' && d.isOnline);
+    if (agentDev) {
+      emitToDevice(agentDev.deviceId, 'agent-force-detach-controller', {
+        oldControllerId: prev,
+        reason: 'switched',
+      });
+    }
+  }
+
+  // 2. Update active tracking
+  activeControllers.set(hostId, {
+    controllerId: newCtrlId,
+    meetingId: roomId,
+  });
+
+  // 3. Update meetingAccessState if room exists
+  if (roomId) {
+    const stateMap = meetingAccessState.get(roomId);
+    if (stateMap) {
+      const state = stateMap.get(hostId);
+      if (state) {
+        state.activeController = newCtrlId;
+        state.pendingRequests = (state.pendingRequests || []).filter(r => String(r.userId) !== newCtrlId);
+        emitAccessState(roomId, hostId);
+      }
+    }
+  }
+
+  // 4. Notify agent to attach new controller
+  const hostDevicesForAttach = getDeviceRegistrySnapshotForUser(hostId);
+  const agentDevForAttach = hostDevicesForAttach.find(d => d.deviceType === 'native-agent' && d.isOnline);
+  if (agentDevForAttach) {
+    emitToDevice(agentDevForAttach.deviceId, 'agent-attach-controller', {
+      controllerId: newCtrlId,
+      accessType: 'control',
+    });
+  }
+
+  console.log(`[Access Transfer] ${newCtrlId} now controls ${hostId}`);
+}
 
 /**
  * Check if a user (by authUserId) is currently in a meeting room.
@@ -2357,49 +2433,10 @@ function createSocketServer(server, clientOrigin) {
 
 
 
-        const prev = state.activeController;
-
-        // Revoke previous controller + notify agent
-        if (prev && String(prev) !== String(controllerId)) {
-          console.log(`[Access Switched] ${getDisplayName(roomId, prev)} → ${getDisplayName(roomId, controllerId)}`);
-
-          const revokePayload = {
-            meetingId: roomId,
-            ownerId: String(ownerAuthId),
-            revokedControllerId: String(prev),
-            reason: 'switched',
-          };
-          io.to(roomId).emit('access-revoked', revokePayload);
-          emitToUser(String(prev), 'access-revoked', revokePayload);
-
-          // Notify agent to detach old controller
-          const ownerDevices = getDeviceRegistrySnapshotForUser(ownerAuthId);
-          const agentDevice = ownerDevices.find(d => d.deviceType === 'native-agent' && d.isOnline);
-          if (agentDevice) {
-            emitToDevice(agentDevice.deviceId, 'agent-force-detach-controller', {
-              oldControllerId: String(prev),
-              reason: 'switched',
-            });
-          }
-        }
-
-        state.activeController = String(controllerId);
-        activeControllers.set(String(ownerAuthId), {
-          controllerId: String(controllerId),
-          meetingId: roomId,
-        });
+        // Shared switch logic
+        handleMeetingAccessTransfer(ownerAuthId, controllerId, roomId);
 
         console.log(`[Access Granted] ${getDisplayName(roomId, controllerId)} now controls ${getDisplayName(roomId, ownerAuthId)}`);
-
-        // Notify agent to attach new controller
-        const ownerDevicesForAttach = getDeviceRegistrySnapshotForUser(ownerAuthId);
-        const agentDeviceForAttach = ownerDevicesForAttach.find(d => d.deviceType === 'native-agent' && d.isOnline);
-        if (agentDeviceForAttach) {
-          emitToDevice(agentDeviceForAttach.deviceId, 'agent-attach-controller', {
-            controllerId: String(controllerId),
-            accessType: 'control',
-          });
-        }
 
         const payload = {
           meetingId: roomId,
@@ -2607,47 +2644,10 @@ function createSocketServer(server, clientOrigin) {
         }
 
         const state = getOrInitOwnerState(roomId, ownerAuthId);
-        const prev = state.activeController;
+        // Unified shared logic
+        handleMeetingAccessTransfer(ownerAuthId, newCtrl, roomId);
 
-        // 1. Revoke previous controller
-        if (prev && String(prev) !== newCtrl) {
-          console.log(`[Quick Switch] Revoking ${getDisplayName(roomId, prev)}`);
-
-          const revokePayload = {
-            meetingId: roomId,
-            ownerId: ownerAuthId,
-            revokedControllerId: String(prev),
-            reason: 'switched',
-          };
-          io.to(roomId).emit('access-revoked', revokePayload);
-          emitToUser(String(prev), 'access-revoked', revokePayload);
-
-          // Tell agent to detach old controller
-          emitToDevice(agentDevice.deviceId, 'agent-force-detach-controller', {
-            oldControllerId: String(prev),
-            reason: 'switched',
-          });
-        }
-
-        // 2. Remove new controller from pending requests
-        state.pendingRequests = state.pendingRequests.filter(r => String(r.userId) !== newCtrl);
-
-        // 3. Set new controller
-        state.activeController = newCtrl;
-        activeControllers.set(ownerAuthId, {
-          controllerId: newCtrl,
-          meetingId: roomId,
-        });
-
-        console.log(`[Quick Switch] ${getDisplayName(roomId, newCtrl)} now controls ${getDisplayName(roomId, ownerAuthId)}`);
-
-        // 4. Tell agent to attach new controller
-        emitToDevice(agentDevice.deviceId, 'agent-attach-controller', {
-          controllerId: newCtrl,
-          accessType: access,
-        });
-
-        // 5. Notify new controller
+        // 5. Notify new controller (additional meeting-specific payload if needed)
         const grantPayload = {
           meetingId: roomId,
           ownerId: ownerAuthId,
@@ -2755,4 +2755,4 @@ function getMetrics() {
 
 
 
-module.exports = { createSocketServer, emitToUser, emitToDevice, getMetrics, isUserInMeeting };
+module.exports = { createSocketServer, emitToUser, emitToDevice, getMetrics, isUserInMeeting, handleMeetingAccessTransfer };

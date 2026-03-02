@@ -26,18 +26,19 @@ export default function RemoteVideoArea({
     console.log('[RemoteVideoArea] videoRef exists:', !!videoRef.current);
     console.log('[RemoteVideoArea] stream tracks count:', stream?.getTracks()?.length || 0);
 
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      console.log('[RemoteVideoArea] ✓ Stream set to video element');
-      console.log('[RemoteVideoArea] Stream tracks count:', stream.getTracks()?.length || 0);
-      console.log('[RemoteVideoArea] Video srcObject exists:', !!videoRef.current.srcObject);
+    if (videoRef.current) {
+      if (stream) {
+        videoRef.current.srcObject = stream;
+        console.log('[RemoteVideoArea] ✓ Stream set to video element');
 
-      // Force video to play
-      videoRef.current.play().catch(err => {
-        console.log('[RemoteVideoArea] Play error:', err);
-      });
-    } else {
-      console.log('[RemoteVideoArea] ❌ Cannot set stream - missing video element or stream');
+        // Force video to play
+        videoRef.current.play().catch(err => {
+          console.log('[RemoteVideoArea] Play error:', err);
+        });
+      } else {
+        videoRef.current.srcObject = null;
+        console.log('[RemoteVideoArea] Clear: Stream removed, srcObject set to null');
+      }
     }
   }, [stream]);
 

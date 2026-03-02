@@ -603,45 +603,34 @@ export function useDeskLinkWebRTC() {
   }, []);
 
   const stopSession = useCallback(() => {
-    console.log('[WebRTC] ===== STOPPING SESSION =====');
+    console.log('[WebRTC] ===== STOPPING SESSION (Explicit) =====');
 
     stopStatsCollection();
     hasFiredConnectedRef.current = false;
 
     if (dataChannelRef.current) {
+      console.log('[WebRTC] Closing DataChannel...');
       try {
         dataChannelRef.current.close();
-      } catch { }
+      } catch (e) { console.warn('[WebRTC] DataChannel close error', e); }
       dataChannelRef.current = null;
     }
 
     if (pcRef.current) {
+      console.log('[WebRTC] Closing PeerConnection...');
       try {
         pcRef.current.close();
-      } catch { }
+      } catch (e) { console.warn('[WebRTC] PC close error', e); }
       pcRef.current = null;
     }
 
     if (socketRef.current) {
+      console.log('[WebRTC] Cleaning up socket listeners...');
       try {
         Object.entries(attachedSocketListenersRef.current || {}).forEach(([k, fn]) => {
-          if (k === 'localConnect') {
-            socketRef.current.off('connect', fn);
-          } else {
-            socketRef.current.off(k, fn);
-          }
+          socketRef.current.off(k, fn);
         });
-
         attachedSocketListenersRef.current = {};
-
-        if (sessionRef.current) {
-          socketRef.current.emit('webrtc-cancel', {
-            sessionId: sessionRef.current.sessionId,
-            fromUserId: sessionRef.current.localUserId,
-          });
-        }
-
-        console.log('[WebRTC] stopSession: detached listeners from shared socket');
       } catch (e) {
         console.warn('[WebRTC] Socket cleanup error', e);
       }
@@ -649,12 +638,17 @@ export function useDeskLinkWebRTC() {
     }
 
     if (remoteStreamRef.current) {
+      console.log('[WebRTC] Stopping remote stream tracks:', remoteStreamRef.current.getTracks().length);
       try {
-        remoteStreamRef.current.getTracks().forEach((t) => t.stop());
-      } catch { }
+        remoteStreamRef.current.getTracks().forEach((t) => {
+          t.stop();
+          console.log(`[WebRTC] Track ${t.kind} stopped`);
+        });
+      } catch (e) { console.warn('[WebRTC] Error stopping tracks', e); }
       remoteStreamRef.current = null;
     }
 
+    console.log('[WebRTC] Clearing remoteStream state to null');
     setRemoteStream(null);
     setConnectionState('closed');
     setIceConnectionState('closed');
@@ -662,6 +656,7 @@ export function useDeskLinkWebRTC() {
     sessionRef.current = null;
     startedRef.current = false;
     pendingRemoteIceCandidatesRef.current = [];
+    console.log('[WebRTC] ===== SESSION STOPPED CLEANLY =====');
   }, [stopStatsCollection]);
 
   return {
