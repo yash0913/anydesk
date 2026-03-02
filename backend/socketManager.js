@@ -545,45 +545,23 @@ function createSocketServer(server, clientOrigin) {
 
 
 
-        // ONLY native agents are devices.
-
-        if (effectiveType !== 'native-agent') {
-
-          console.log('[device] ignoring non-native register', {
-
-            deviceId: devId,
-
-            deviceType: effectiveType,
-
-            socketId: socket.id,
-
-          });
-
-          return;
-
-        }
-
-
-
-        socket.data.deviceId = devId;
-
-
-
-        // Track in-memory mapping for signaling (native-only)
-
+        // Track in-memory mapping for signaling
+        // IMPORTANT: Both native agents AND web controllers need to be in onlineDevicesById 
+        // to receive relayed WebRTC signals via emitToDevice()
         trackUserSocket(onlineDevicesById, devId, socket.id);
-
-
 
         const userId = socket.userId ? String(socket.userId) : null;
 
-        deviceRegistryById.set(devId, {
-          userId: userId || 'unknown',
-          deviceType: effectiveType,
-          socketId: socket.id,
-          lastSeen: Date.now(),
-          isOnline: true,
-        });
+        // ONLY native agents get a formal registry entry for status tracking
+        if (effectiveType === 'native-agent') {
+          deviceRegistryById.set(devId, {
+            userId: userId || 'unknown',
+            deviceType: effectiveType,
+            socketId: socket.id,
+            lastSeen: Date.now(),
+            isOnline: true,
+          });
+        }
 
         console.log(`[DEVICE REGISTER] devId=${devId}, userId=${userId}, effectiveType=${effectiveType}`);
 
