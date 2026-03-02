@@ -225,8 +225,8 @@ export function useDeskLinkWebRTC() {
         console.log('[WebRTC] Creating datachannel (CALLER)...');
 
         const dc = pc.createDataChannel('desklink-control', {
-          ordered: true,
-          maxRetransmits: 3,
+          ordered: false,
+          maxRetransmits: 0,
         });
 
         dc.onopen = () => {
