@@ -36,6 +36,7 @@ const deviceRegistryById = new Map(); // Map<deviceId, { userId, deviceType, soc
 const pendingSignalsByDevice = new Map(); // Map<deviceId, Array<{event,payload}>>
 const metrics = { activeSessions: 0, offersRelayed: 0, iceFailures: 0, datachannelMsgs: 0 };
 const userSockets = new Map(); // Map<userId, Set<socketId>>
+const activeControllers = new Map(); // Map<hostUserId, { controllerId, meetingId, deviceId }>
 
 /**
  * Check if a user (by authUserId) is currently in a meeting room.
@@ -142,34 +143,50 @@ function getDeviceRegistrySnapshotForUser(userId) {
 
 
 function emitToDevice(deviceId, event, payload) {
+
   if (!ioInstance || !deviceId) return;
 
   const devId = String(deviceId);
+
   const meta = deviceRegistryById.get(devId);
-  const socketSet = onlineDevicesById.get(devId);
 
-  // Robust check: we can emit if we have a socket set with at least one socket
-  const hasActiveSocket = socketSet && socketSet.size > 0;
+  const isDeviceOnline = !!meta && meta.isOnline === true;
 
-  if (!hasActiveSocket) {
-    console.warn(`[ROUTING] Cannot emit ${event} to ${devId} - no active socket found`);
+  if (!isDeviceOnline) {
 
-    // Debug info: check metadata if it exists
-    if (!meta) {
-      console.warn(`[ROUTING] Device ${devId} unknown to registry`);
+    console.warn(`[ROUTING] Cannot emit ${event} to ${devId} - device not online/registered`);
+
+    const hostUserId = payload && (payload.hostUserId || payload.toUserId || payload.ownerUserId || payload.userId);
+
+    if (hostUserId) {
+
+      console.warn('[ROUTING] Full registry snapshot for hostUserId:', hostUserId, getDeviceRegistrySnapshotForUser(hostUserId));
+
     } else {
-      console.warn(`[ROUTING] Device ${devId} registered as ${meta.deviceType} but marked isOnline=${meta.isOnline}`);
+
+      console.warn('[ROUTING] Full device registry keys:', Array.from(deviceRegistryById.keys()));
+
     }
 
-    console.warn('[ROUTING] Full device registry keys:', Array.from(deviceRegistryById.keys()));
     return;
+
   }
 
 
 
-  console.log(`[ROUTING] Emitting ${event} to ${devId} (${meta?.deviceType || 'unknown'})`);
+  console.log(`[ROUTING] Emitting ${event} to ${devId} (${meta.deviceType})`);
 
-  socketSet.forEach((socketId) => {
+  const set = onlineDevicesById.get(devId);
+
+  if (!set) {
+
+    console.warn(`[ROUTING] Device ${devId} meta exists but socket set missing`);
+
+    return;
+
+  }
+
+  set.forEach((socketId) => {
 
     const socket = ioInstance.sockets.sockets.get(socketId);
 
@@ -497,8 +514,18 @@ function createSocketServer(server, clientOrigin) {
   io.on('connection', (socket) => {
     console.log('[SOCKET] New connection:', socket.id, 'userId:', socket.userId);
 
-    // Base user tracking
+    socket.on('register-device', (payload) => {
+      console.log('[SOCKET] register-device payload:', payload);
+      // Ensure the socket has the userId from the payload if it wasn't authenticated via JWT
+      if (payload.userId && !socket.userId) {
+        socket.userId = String(payload.userId);
+        trackUserSocket(onlineUsersById, socket.userId, socket.id);
+        console.log('[SOCKET] Manually linked socket', socket.id, 'to userId', socket.userId);
+      }
+    });
+
     trackUserSocket(onlineUsersByPhone, socket.userPhone, socket.id);
+
     trackUserSocket(onlineUsersById, socket.userId, socket.id);
 
 
@@ -519,17 +546,41 @@ function createSocketServer(server, clientOrigin) {
 
 
 
-        // Track in-memory mapping for signaling
-        // IMPORTANT: Both native agents AND web controllers need to be in onlineDevicesById 
-        // to receive relayed WebRTC signals via emitToDevice()
+        // ONLY native agents are devices.
+
+        if (effectiveType !== 'native-agent') {
+
+          console.log('[device] ignoring non-native register', {
+
+            deviceId: devId,
+
+            deviceType: effectiveType,
+
+            socketId: socket.id,
+
+          });
+
+          return;
+
+        }
+
+
+
+        socket.data.deviceId = devId;
+
+
+
+        // Track in-memory mapping for signaling (native-only)
+
         trackUserSocket(onlineDevicesById, devId, socket.id);
+
+
 
         const userId = socket.userId ? String(socket.userId) : null;
 
-        // Add to registry for routing (all device types)
         deviceRegistryById.set(devId, {
           userId: userId || 'unknown',
-          deviceType: effectiveType || 'native-agent',
+          deviceType: effectiveType,
           socketId: socket.id,
           lastSeen: Date.now(),
           isOnline: true,
@@ -639,8 +690,6 @@ function createSocketServer(server, clientOrigin) {
     const staleTimer = setInterval(() => {
       const now = Date.now();
       for (const [devId, meta] of deviceRegistryById.entries()) {
-        if (meta.deviceType !== 'native-agent') continue; // Web clients don't heartbeat
-
         if (meta.isOnline && (now - meta.lastSeen > HEARTBEAT_TIMEOUT)) {
           console.log(`[AGENT STALE] Marking agent ${devId} as offline (no heartbeat)`);
           meta.isOnline = false;
@@ -678,18 +727,20 @@ function createSocketServer(server, clientOrigin) {
         const userIdStr = String(userId);
         const deviceType = String(type);
 
-        // Safety check: prevent overwriting existing device with different socket
+        // Safety check: prevent overwriting native-agent entries (could break active sessions)
+        // Web devices can overwrite stale entries from disconnected sessions.
         const existingDevice = deviceRegistryById.get(devId);
         if (existingDevice && existingDevice.socketId !== socket.id) {
-          console.warn('[REGISTER-DEVICE] Device already registered with different socket:', {
-            deviceId: devId,
-            existingSocket: existingDevice.socketId,
-            newSocket: socket.id,
-            deviceType: existingDevice.deviceType
-          });
-          // Optionally, you could force disconnect the old socket here
-          // For now, we'll just log and reject the new registration
-          return;
+          if (existingDevice.deviceType === 'native-agent') {
+            console.warn('[REGISTER-DEVICE] Refusing to overwrite native-agent entry:', {
+              deviceId: devId,
+              existingSocket: existingDevice.socketId,
+              newSocket: socket.id,
+            });
+            return;
+          }
+          // Web device: old socket likely disconnected — allow overwrite
+          console.log('[REGISTER-DEVICE] Overwriting stale web device entry:', devId);
         }
 
         // Store device reference on socket for cleanup
@@ -1040,20 +1091,42 @@ function createSocketServer(server, clientOrigin) {
 
 
 
-        emitToDevice(toDeviceId, 'webrtc-answer', payload);
-
-
-
-        if (!onlineDevicesById.has(String(toDeviceId))) {
-
-          console.warn(`[webrtc-answer] Device ${toDeviceId} offline, queuing signal`);
-
-          queueSignal(toDeviceId, 'webrtc-answer', payload);
-
-        } else {
-
+        // Relay answer — try direct device ID, then fallback to web-{userId}
+        const toDeviceMeta = deviceRegistryById.get(String(toDeviceId));
+        if (toDeviceMeta && toDeviceMeta.isOnline) {
+          emitToDevice(toDeviceId, 'webrtc-answer', payload);
           console.log(`[webrtc-answer] Device ${toDeviceId} is ONLINE, signal sent immediately`);
+        } else {
+          // Fallback logic
+          const fallbackDeviceId = `web-${fromUserId}`; // In answer, fromUserId is host, but toDeviceId is requester
+          // Wait, 'fromUserId' in the payload is the sender (host/agent). 
+          // We need to know who the target user is. 
+          // The payload's 'toDeviceId' is usually the hash. 
+          // We can try to derive the target user from the session if needed, 
+          // but usually, we can try to guess or use the toDeviceId metadata if it exists but is offline.
 
+          // Actually, let's keep it consistent with the ICE fix.
+          const fallbackDeviceIdGuess = `web-${fromUserId}`; // This might be wrong if 'fromUserId' is the sender.
+          // In webrtc-answer, fromUserId is the agent/host. toDeviceId is the caller.
+          // We need the caller's userId.
+
+          const session = await validateSessionAccess(sessionId, fromUserId);
+          const targetUserId = session ? session.callerUserId : null;
+
+          if (targetUserId) {
+            const fallbackDeviceId = `web-${targetUserId}`;
+            const fallbackMeta = deviceRegistryById.get(fallbackDeviceId);
+            if (fallbackMeta && fallbackMeta.isOnline) {
+              console.log(`[webrtc-answer] Fallback: routing to ${fallbackDeviceId} instead of ${String(toDeviceId).substring(0, 16)}...`);
+              emitToDevice(fallbackDeviceId, 'webrtc-answer', payload);
+            } else {
+              emitToDevice(toDeviceId, 'webrtc-answer', payload);
+              queueSignal(toDeviceId, 'webrtc-answer', payload);
+            }
+          } else {
+            emitToDevice(toDeviceId, 'webrtc-answer', payload);
+            queueSignal(toDeviceId, 'webrtc-answer', payload);
+          }
         }
 
       } catch (err) {
@@ -1132,16 +1205,35 @@ function createSocketServer(server, clientOrigin) {
 
 
 
-        // Relay candidate
+        // Relay candidate — try direct device ID, then fall back to web-{userId} for web clients
+        const toDeviceMeta = deviceRegistryById.get(String(toDeviceId));
+        if (toDeviceMeta && toDeviceMeta.isOnline) {
+          emitToDevice(toDeviceId, 'webrtc-ice', payload);
+        } else {
+          // Fallback: route via web-{userId} if toDeviceId is a session hash not yet registered
+          // Determine the target user from the session metadata
+          const isFromCaller = String(session.callerUserId) === String(fromUserId);
+          const targetUserId = isFromCaller ? session.receiverUserId : session.callerUserId;
 
-        emitToDevice(toDeviceId, 'webrtc-ice', payload);
-
-
-
-        if (!onlineDevicesById.has(String(toDeviceId))) {
-
-          queueSignal(toDeviceId, 'webrtc-ice', payload);
-
+          if (targetUserId) {
+            const fallbackDeviceId = `web-${targetUserId}`;
+            const fallbackMeta = deviceRegistryById.get(fallbackDeviceId);
+            if (fallbackMeta && fallbackMeta.isOnline) {
+              console.log(`[webrtc-ice] Fallback: routing to ${fallbackDeviceId} instead of ${String(toDeviceId).substring(0, 16)}...`);
+              emitToDevice(fallbackDeviceId, 'webrtc-ice', payload);
+            } else {
+              // Original behavior — logs 'not online' and queues
+              emitToDevice(toDeviceId, 'webrtc-ice', payload);
+              if (!onlineDevicesById.has(String(toDeviceId))) {
+                queueSignal(toDeviceId, 'webrtc-ice', payload);
+              }
+            }
+          } else {
+            emitToDevice(toDeviceId, 'webrtc-ice', payload);
+            if (!onlineDevicesById.has(String(toDeviceId))) {
+              queueSignal(toDeviceId, 'webrtc-ice', payload);
+            }
+          }
         }
 
       } catch (err) {
@@ -2267,58 +2359,56 @@ function createSocketServer(server, clientOrigin) {
 
         const prev = state.activeController;
 
+        // Revoke previous controller + notify agent
         if (prev && String(prev) !== String(controllerId)) {
-
           console.log(`[Access Switched] ${getDisplayName(roomId, prev)} → ${getDisplayName(roomId, controllerId)}`);
 
-
-
           const revokePayload = {
-
             meetingId: roomId,
-
             ownerId: String(ownerAuthId),
-
             revokedControllerId: String(prev),
-
             reason: 'switched',
-
           };
-
-
-
           io.to(roomId).emit('access-revoked', revokePayload);
-
           emitToUser(String(prev), 'access-revoked', revokePayload);
 
+          // Notify agent to detach old controller
+          const ownerDevices = getDeviceRegistrySnapshotForUser(ownerAuthId);
+          const agentDevice = ownerDevices.find(d => d.deviceType === 'native-agent' && d.isOnline);
+          if (agentDevice) {
+            emitToDevice(agentDevice.deviceId, 'agent-force-detach-controller', {
+              oldControllerId: String(prev),
+              reason: 'switched',
+            });
+          }
         }
 
-
-
         state.activeController = String(controllerId);
-
-
+        activeControllers.set(String(ownerAuthId), {
+          controllerId: String(controllerId),
+          meetingId: roomId,
+        });
 
         console.log(`[Access Granted] ${getDisplayName(roomId, controllerId)} now controls ${getDisplayName(roomId, ownerAuthId)}`);
 
-
+        // Notify agent to attach new controller
+        const ownerDevicesForAttach = getDeviceRegistrySnapshotForUser(ownerAuthId);
+        const agentDeviceForAttach = ownerDevicesForAttach.find(d => d.deviceType === 'native-agent' && d.isOnline);
+        if (agentDeviceForAttach) {
+          emitToDevice(agentDeviceForAttach.deviceId, 'agent-attach-controller', {
+            controllerId: String(controllerId),
+            accessType: 'control',
+          });
+        }
 
         const payload = {
-
           meetingId: roomId,
-
           ownerId: String(ownerAuthId),
-
           controllerId: String(controllerId),
-
         };
-
         io.to(roomId).emit('access-granted', payload);
-
         emitToUser(String(ownerAuthId), 'access-granted', payload);
-
         emitToUser(String(controllerId), 'access-granted', payload);
-
         emitAccessState(roomId, ownerAuthId);
 
       } catch (err) {
@@ -2483,9 +2573,102 @@ function createSocketServer(server, clientOrigin) {
 
     });
 
+    // Quick Switch: dedicated event for host to transfer control
+    socket.on('remote-access-switch', ({ meetingId, hostUserId, newControllerId, accessType }) => {
+      try {
+        const roomId = meetingId;
+        const ownerAuthId = String(hostUserId || '');
+        const newCtrl = String(newControllerId || '');
+        const access = accessType || 'control';
+
+        if (!roomId || !ownerAuthId || !newCtrl) {
+          socket.emit('access-error', { meetingId: roomId || null, message: 'meetingId, hostUserId, newControllerId are required' });
+          return;
+        }
+
+        // Only the owner (host) can switch controllers
+        const socketAuthId = getAuthUserIdForSocket(socket);
+        if (!socketAuthId || String(socketAuthId) !== ownerAuthId) {
+          socket.emit('access-error', { meetingId: roomId, message: 'Only the host can switch controllers' });
+          return;
+        }
+
+        if (!isAuthUserInRoom(roomId, ownerAuthId) || !isAuthUserInRoom(roomId, newCtrl)) {
+          socket.emit('access-error', { meetingId: roomId, message: 'Owner and new controller must be in meeting' });
+          return;
+        }
+
+        // Validate agent is online
+        const ownerDevices = getDeviceRegistrySnapshotForUser(ownerAuthId);
+        const agentDevice = ownerDevices.find(d => d.deviceType === 'native-agent' && d.isOnline);
+        if (!agentDevice) {
+          socket.emit('access-error', { meetingId: roomId, message: 'Agent not available for switch' });
+          return;
+        }
+
+        const state = getOrInitOwnerState(roomId, ownerAuthId);
+        const prev = state.activeController;
+
+        // 1. Revoke previous controller
+        if (prev && String(prev) !== newCtrl) {
+          console.log(`[Quick Switch] Revoking ${getDisplayName(roomId, prev)}`);
+
+          const revokePayload = {
+            meetingId: roomId,
+            ownerId: ownerAuthId,
+            revokedControllerId: String(prev),
+            reason: 'switched',
+          };
+          io.to(roomId).emit('access-revoked', revokePayload);
+          emitToUser(String(prev), 'access-revoked', revokePayload);
+
+          // Tell agent to detach old controller
+          emitToDevice(agentDevice.deviceId, 'agent-force-detach-controller', {
+            oldControllerId: String(prev),
+            reason: 'switched',
+          });
+        }
+
+        // 2. Remove new controller from pending requests
+        state.pendingRequests = state.pendingRequests.filter(r => String(r.userId) !== newCtrl);
+
+        // 3. Set new controller
+        state.activeController = newCtrl;
+        activeControllers.set(ownerAuthId, {
+          controllerId: newCtrl,
+          meetingId: roomId,
+        });
+
+        console.log(`[Quick Switch] ${getDisplayName(roomId, newCtrl)} now controls ${getDisplayName(roomId, ownerAuthId)}`);
+
+        // 4. Tell agent to attach new controller
+        emitToDevice(agentDevice.deviceId, 'agent-attach-controller', {
+          controllerId: newCtrl,
+          accessType: access,
+        });
+
+        // 5. Notify new controller
+        const grantPayload = {
+          meetingId: roomId,
+          ownerId: ownerAuthId,
+          controllerId: newCtrl,
+          accessType: access,
+        };
+        io.to(roomId).emit('access-granted', grantPayload);
+        emitToUser(newCtrl, 'access-granted', grantPayload);
+        emitToUser(ownerAuthId, 'access-granted', grantPayload);
+        emitAccessState(roomId, ownerAuthId);
+
+      } catch (err) {
+        console.error('[Quick Switch] error', err && err.message);
+      }
+    });
+
     // Handle socket disconnection - clean up device registrations
     socket.on('disconnect', () => {
       console.log(`[DISCONNECT] Socket ${socket.id} disconnected`);
+
+      const userId = socket.userId ? String(socket.userId) : null;
 
       // Clean up device registration if this socket was registered as a device
       if (socket.deviceId && deviceRegistryById.has(socket.deviceId)) {
@@ -2495,12 +2678,60 @@ function createSocketServer(server, clientOrigin) {
       }
 
       // Clean up user tracking
-      if (socket.userId) {
-        untrackUserSocket(onlineUsersById, socket.userId, socket.id);
+      if (userId) {
+        untrackUserSocket(onlineUsersById, userId, socket.id);
       }
 
       if (socket.userPhone) {
         untrackUserSocket(onlineUsersByPhone, socket.userPhone, socket.id);
+      }
+
+      // Clean up activeControllers if this user was a controller
+      if (userId) {
+        for (const [hostId, ctrl] of activeControllers.entries()) {
+          if (String(ctrl.controllerId) === userId) {
+            activeControllers.delete(hostId);
+            console.log(`[DISCONNECT] Removed ${userId} as controller of ${hostId}`);
+
+            // Notify agent to clear controller
+            const hostDevices = getDeviceRegistrySnapshotForUser(hostId);
+            const agentDev = hostDevices.find(d => d.deviceType === 'native-agent' && d.isOnline);
+            if (agentDev) {
+              emitToDevice(agentDev.deviceId, 'agent-clear-controller', {
+                reason: 'controller-disconnected',
+              });
+            }
+
+            // Clean meetingAccessState
+            if (ctrl.meetingId) {
+              const byOwner = meetingAccessState.get(ctrl.meetingId);
+              if (byOwner) {
+                const ownerState = byOwner.get(hostId);
+                if (ownerState && String(ownerState.activeController) === userId) {
+                  ownerState.activeController = null;
+                  emitAccessState(ctrl.meetingId, hostId);
+                }
+              }
+            }
+            break;
+          }
+        }
+
+        // If this user was a host, clean up their controller entry
+        if (activeControllers.has(userId)) {
+          const ctrl = activeControllers.get(userId);
+          activeControllers.delete(userId);
+          console.log(`[DISCONNECT] Host ${userId} disconnected, clearing controller ${ctrl.controllerId}`);
+
+          // Notify the agent to stop streaming
+          const hostDevices = getDeviceRegistrySnapshotForUser(userId);
+          const agentDev = hostDevices.find(d => d.deviceType === 'native-agent' && d.isOnline);
+          if (agentDev) {
+            emitToDevice(agentDev.deviceId, 'agent-clear-controller', {
+              reason: 'host-disconnected',
+            });
+          }
+        }
       }
     });
 

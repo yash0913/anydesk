@@ -357,6 +357,18 @@ export function useDeskLinkWebRTC() {
         socketRef.current = socket;
         console.log('[WebRTC] Socket ready, proceeding with WebRTC setup');
 
+        // Register this session's localDeviceId so the backend can route ICE
+        // candidates from the agent back to this socket. The global socket.js
+        // only registers 'web-{userId}' which doesn't match the session device ID.
+        if (localDeviceId) {
+          socket.emit('register-device', {
+            deviceId: localDeviceId,
+            userId: localUserId,
+            type: 'web',
+          });
+          console.log('[WebRTC] Registered session device ID for ICE routing:', localDeviceId);
+        }
+
         // Answer handler
         const onAnswer = async ({ sdp, sessionId: sid }) => {
           try {

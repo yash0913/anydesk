@@ -28,7 +28,7 @@ import { MeetingRemoteControlProvider, useMeetingRemoteControl } from './meeting
 
 import RemoteVideoArea from '../../modules/desklink/components/RemoteVideoArea.jsx';
 
-import IncomingRequestModal from '../../modules/desklink/components/IncomingRequestModal.jsx';
+import RemoteRequestPopover from './RemoteRequestPopover.jsx';
 import RemoteControlPanel from '../../modules/desklink/components/RemoteControlPanel.jsx';
 import { useDeskLinkSocket } from '../../modules/desklink/hooks/useDeskLinkSocket.js';
 import { getSocket } from '../../socket.js';
@@ -194,6 +194,9 @@ function VideoRoomInner({
     setOnDataMessage,
     requestControlForUser,
     incomingRequest,
+    remoteRequests,
+    isRequestPanelOpen,
+    setIsRequestPanelOpen,
     acceptIncomingRequest,
     rejectIncomingRequest,
     endControl,
@@ -1085,9 +1088,28 @@ function VideoRoomInner({
 
         isRemoteControlOpen={isRemoteControlOpen}
 
-        onToggleRemoteControl={toggleRemoteControlPanel}
+        onToggleRemoteControl={() => {
+          if (remoteRequests.length > 0) {
+            setIsRequestPanelOpen(prev => !prev);
+          } else {
+            toggleRemoteControlPanel();
+          }
+        }}
+
+        pendingRequestCount={remoteRequests.length}
 
       />
+
+      {/* Remote Access Requests Popover — anchored near control bar */}
+      <div style={{ position: 'fixed', bottom: 90, right: 180, zIndex: 55 }}>
+        <RemoteRequestPopover
+          requests={remoteRequests}
+          isOpen={isRequestPanelOpen}
+          onClose={() => setIsRequestPanelOpen(false)}
+          onAccept={(sessionId, accessType) => acceptIncomingRequest(sessionId, accessType)}
+          onReject={(sessionId) => rejectIncomingRequest(sessionId)}
+        />
+      </div>
 
 
 
@@ -1327,18 +1349,7 @@ function VideoRoomInner({
 
       )}
 
-      {/* Incoming DeskLink request modal (owner side) */}
 
-      {incomingRequest && (
-
-        <IncomingRequestModal
-          requesterName={incomingRequest.callerName || 'Remote user'}
-          deviceLabel={incomingRequest.receiverDeviceId || 'this device'}
-          onAccept={acceptIncomingRequest}
-          onReject={rejectIncomingRequest}
-        />
-
-      )}
 
       {/* Host Action Log Side Panel */}
       <RemoteControlPanel

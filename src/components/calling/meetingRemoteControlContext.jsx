@@ -84,7 +84,11 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
 
 
 
-  const [incomingRequest, setIncomingRequest] = useState(null); // owner side
+  const [remoteRequests, setRemoteRequests] = useState([]); // owner side — array of requests
+  const [isRequestPanelOpen, setIsRequestPanelOpen] = useState(false);
+
+  // Backward-compatible single-request alias (used by inline VisionDesk panel)
+  const incomingRequest = remoteRequests.length > 0 ? remoteRequests[0] : null;
 
   const [actionLogs, setActionLogs] = useState([]);
 
@@ -171,12 +175,17 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
 
 
 
-      setIncomingRequest({
-        sessionId: payload.sessionId,
-        fromUserId: payload.fromUserId,
-        fromDeviceId: payload.fromDeviceId,
-        receiverDeviceId: payload.receiverDeviceId,
-        callerName: payload.callerName,
+      setRemoteRequests(prev => {
+        // Avoid duplicates by sessionId
+        if (prev.some(r => r.sessionId === payload.sessionId)) return prev;
+        return [...prev, {
+          sessionId: payload.sessionId,
+          fromUserId: payload.fromUserId,
+          fromDeviceId: payload.fromDeviceId,
+          receiverDeviceId: payload.receiverDeviceId,
+          callerName: payload.callerName,
+          accessType: 'control', // default access type
+        }];
       });
 
 
@@ -903,134 +912,63 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
 
 
   const acceptIncomingRequest = useCallback(
-    async (providedPermissions) => {
+    async (sessionIdOrPerms, accessType) => {
+      // Support two call signatures:
+      // 1. acceptIncomingRequest(sessionId, accessType) — new popover style
+      // 2. acceptIncomingRequest(permissions) — legacy inline panel style (uses first request)
+      let targetRequest;
+      let providedPermissions;
 
-
-
-      if (!incomingRequest || !token) {
-
-
-
-        console.warn('[MeetingRemoteControl] Cannot accept: missing request or token');
-
-
-
-        return;
-
-
-
+      if (typeof sessionIdOrPerms === 'string') {
+        // New style: sessionId + accessType
+        targetRequest = remoteRequests.find(r => r.sessionId === sessionIdOrPerms);
+        providedPermissions = {
+          viewOnly: accessType === 'view',
+          allowControl: accessType !== 'view',
+          allowClipboard: true,
+          allowFileTransfer: true,
+        };
+      } else {
+        // Legacy style: permissions object, use first request
+        targetRequest = remoteRequests[0] || null;
+        providedPermissions = sessionIdOrPerms || permissions;
       }
 
+      if (!targetRequest || !token) {
+        console.warn('[MeetingRemoteControl] Cannot accept: missing request or token');
+        return;
+      }
 
-
-
-
-
-
-      // Use the deviceId targeted by the requester as fallback if we don't know our own ID
-
-
-
-      const targetDeviceId = localDeviceId || incomingRequest.receiverDeviceId;
-
-
-
-
-
-
+      const targetDeviceId = localDeviceId || targetRequest.receiverDeviceId;
 
       if (!targetDeviceId) {
-
-
-
         console.error('[MeetingRemoteControl] Cannot accept: no receiver device ID found');
-
-
-
         return;
-
-
-
       }
-
-
-
-
-
-
 
       console.log('[MeetingRemoteControl] Accepting request', {
-
-
-
+        sessionId: targetRequest.sessionId,
         targetDeviceId,
-
-        permissions: providedPermissions || permissions
-
+        permissions: providedPermissions,
       });
 
-
-
-
-
-
-
       try {
-
-
-
         const payload = {
-
-
-
-          sessionId: incomingRequest.sessionId,
-
+          sessionId: targetRequest.sessionId,
           receiverDeviceId: targetDeviceId,
-
-          permissions: providedPermissions || permissions,
-
-
-
+          permissions: providedPermissions,
         };
 
-
-
-
-
-
-
         await desklinkApi.acceptRemote(token, payload);
-
-
-
         console.log('[MeetingRemoteControl] Accept API success');
 
-
-
-        setIncomingRequest(null);
-
-
-
+        // Remove from array
+        setRemoteRequests(prev => prev.filter(r => r.sessionId !== targetRequest.sessionId));
       } catch (err) {
-
-
-
         console.error('[MeetingRemoteControl] acceptIncomingRequest failed', err);
-
-
-
       }
-
-
-
     },
-
-
-
-    [incomingRequest, token, localDeviceId]
-
-
-
+    [remoteRequests, token, localDeviceId, permissions]
   );
 
 
@@ -1040,132 +978,63 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
 
 
   const rejectIncomingRequest = useCallback(
+    async (sessionId) => {
+      // Support two call signatures:
+      // 1. rejectIncomingRequest(sessionId) — new popover style
+      // 2. rejectIncomingRequest() — legacy style (rejects first request)
+      let targetRequest;
 
-
-
-    async () => {
-
-
-
-      if (!incomingRequest || !token) {
-
-
-
-        setIncomingRequest(null);
-
-
-
-        return;
-
-
-
+      if (typeof sessionId === 'string') {
+        targetRequest = remoteRequests.find(r => r.sessionId === sessionId);
+      } else {
+        targetRequest = remoteRequests[0] || null;
       }
 
+      if (!targetRequest || !token) {
+        if (targetRequest) {
+          setRemoteRequests(prev => prev.filter(r => r.sessionId !== targetRequest.sessionId));
+        }
+        return;
+      }
 
-
-
-
-
-
-      const targetDeviceId = localDeviceId || incomingRequest.receiverDeviceId;
-
-
+      const targetDeviceId = localDeviceId || targetRequest.receiverDeviceId;
 
       if (!targetDeviceId) {
-
-
-
         console.error('[MeetingRemoteControl] Cannot reject: no receiver device ID found');
-
-
-
-        setIncomingRequest(null); // Clear the request even if we can't send a reject
-
-
-
+        setRemoteRequests(prev => prev.filter(r => r.sessionId !== targetRequest.sessionId));
         return;
-
-
-
       }
 
-
-
-
-
-
-
-      console.log('[MeetingRemoteControl] Rejecting request', incomingRequest.sessionId);
-
-
-
-
-
-
+      console.log('[MeetingRemoteControl] Rejecting request', targetRequest.sessionId);
 
       try {
-
-
-
         const payload = {
-
-
-
-          sessionId: incomingRequest.sessionId,
-
-
-
+          sessionId: targetRequest.sessionId,
           receiverDeviceId: targetDeviceId,
-
-
-
         };
-
-
-
-
-
-
-
         await desklinkApi.rejectRemote(token, payload);
-
-
-
       } catch (err) {
-
-
-
         console.error('[MeetingRemoteControl] rejectIncomingRequest failed', err);
-
-
-
       } finally {
-
-
-
-        setIncomingRequest(null);
-
-
-
+        setRemoteRequests(prev => prev.filter(r => r.sessionId !== targetRequest.sessionId));
       }
-
-
-
     },
-
-
-
-    [incomingRequest, token]
-
-
-
+    [remoteRequests, token, localDeviceId]
   );
 
-
-
-
-
-
+  // Quick Switch: emit remote-access-switch to backend
+  const switchController = useCallback(
+    (newControllerId, accessType = 'control') => {
+      if (!socket || !meetingId || !localAuthUserId) return;
+      socket.emit('remote-access-switch', {
+        meetingId,
+        hostUserId: localAuthUserId,
+        newControllerId,
+        accessType,
+      });
+    },
+    [socket, meetingId, localAuthUserId]
+  );
 
   // Handle desklink-session-start -> start WebRTC as caller when we are controller
 
@@ -1399,14 +1268,27 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
       setActiveControllerName(null);
     };
 
+    // Listen for access-revoked (Quick Switch: controller lost control)
+    const handleAccessRevoked = (payload) => {
+      if (String(payload.revokedControllerId) === String(localAuthUserId)) {
+        // We were the controller and got revoked
+        stopSession();
+        setSessionConfig(null);
+        setActiveSessionId(null);
+        addLog('Control transferred by host', 'system');
+      }
+    };
+
     socket.on('desklink-session-start', handleSessionStartExtended);
     socket.on('desklink-session-ended', handleSessionEndedExtended);
     socket.on('host-action-log', handleHostActionLog);
+    socket.on('access-revoked', handleAccessRevoked);
 
     return () => {
       socket.off('desklink-session-start', handleSessionStartExtended);
       socket.off('desklink-session-ended', handleSessionEndedExtended);
       socket.off('host-action-log', handleHostActionLog);
+      socket.off('access-revoked', handleAccessRevoked);
     };
 
   }, [socket, token, startAsCaller, startAsReceiver, activeSessionId, localAuthUserId, addLog]);
@@ -1436,13 +1318,14 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
     pendingSession,
 
 
-    // Incoming owner-side request (for future in-meeting modal)
-
-    incomingRequest,
-
+    // Incoming owner-side requests
+    incomingRequest, // backward-compatible (first request or null)
+    remoteRequests, // full array of pending requests
+    isRequestPanelOpen,
+    setIsRequestPanelOpen,
     acceptIncomingRequest,
-
     rejectIncomingRequest,
+    switchController,
 
 
     // Permissions (owner controls)
@@ -1481,9 +1364,6 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
     actionLogs,
 
     activeControllerName,
-    agentStatus,
-    provisionAgent,
-    checkLocalAgent,
     setOnDataMessage,
 
     setOnConnected,

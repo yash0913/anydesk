@@ -11,6 +11,7 @@ export default function ControlsBar({
   onToggleParticipants, onToggleChat, onToggleReactions, onToggleHostTools,
   canUseMic = true, canUseCamera = true, isChatDisabled = false,
   isRemoteControlOpen = false, onToggleRemoteControl,
+  pendingRequestCount = 0,
 }) {
 
   // Helper for button styles to keep code clean
@@ -65,9 +66,36 @@ export default function ControlsBar({
             <button onClick={onScreenShare} className={`${btnBase} ${isScreenSharing ? 'bg-blue-600 text-white' : btnSecondary} border-none shadow-none`}>
               <Monitor size={20} />
             </button>
-            <button onClick={onToggleRemoteControl} className={`${btnBase} ${isRemoteControlOpen ? 'bg-purple-600 text-white' : btnSecondary} border-none shadow-none`}>
-              <MousePointer2 size={20} />
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button onClick={onToggleRemoteControl} className={`${btnBase} ${isRemoteControlOpen ? 'bg-purple-600 text-white' : btnSecondary} border-none shadow-none`}>
+                <MousePointer2 size={20} />
+              </button>
+              {pendingRequestCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    right: -2,
+                    minWidth: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    background: '#ef4444',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 4px',
+                    lineHeight: 1,
+                    boxShadow: '0 2px 6px rgba(239,68,68,0.5)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {pendingRequestCount}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Host/Settings */}
