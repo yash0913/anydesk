@@ -1,7 +1,5 @@
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
-
-const isDev = process.env.NODE_ENV === 'development';
+const { app, BrowserWindow } = require("electron");
+const path = require("path");
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -13,28 +11,18 @@ function createWindow() {
     },
   });
 
-  if (isDev) {
-    // In development, assume Vite dev server is running
-    win.loadURL('http://localhost:5173');
-  } else {
-    // In production, load the built Vite app
-    const indexPath = path.join(__dirname, 'dist', 'index.html');
-    win.loadFile(indexPath);
-  }
+  const startURL =
+    process.env.ELECTRON_START_URL ||
+  win.loadFile(path.join(__dirname, "dist", "index.html"));
+
+mainWindow.loadFile(path.join(__dirname, 'build/index.html'));
+  win.webContents.openDevTools(); // keep this for debugging
 }
 
-app.whenReady().then(() => {
-  createWindow();
+app.whenReady().then(createWindow);
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });
