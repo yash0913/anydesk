@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+   <EmbeddedResource Include="$(IntermediateOutputPath)webrtc_payload.zip" LogicalName="DeskLinkAgent.WebRTC.webrtc_payload.zip" />
+   <PackageReference Include="DotNetEnv" Version="3.1.1" />
+   <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+   <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
+    <PackageReference Include="System.Management" Version="7.0.2" />
+    <PackageReference Include="System.Windows.Forms" Version="4.0.0" />
+    <PackageReference Include="Watson" Version="6.4.0" />
+    <PackageReference Include="SocketIOClient" Version="3.1.2" />
+  </ItemGroup>
+
+  <!-- Include WebRTC folder in publish -->
+  <ItemGroup>
+    <Content Include="WebRTC\**">
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="EnsureWebRtcPayloadPresent" BeforeTargets="Build">
+    <Error Condition="!Exists('WebRTC\\node_modules\\wrtc')" Text="DeskLinkAgent build error: WebRTC\\node_modules\\wrtc is missing. Run 'npm install' in DeskLinkAgent\\WebRTC so the agent can require('wrtc')." />
+    <Error Condition="!Exists('WebRTC\\node\\node.exe')" Text="DeskLinkAgent build error: WebRTC\\node\\node.exe is missing. Add a portable Windows Node runtime (win-x64) at DeskLinkAgent\\WebRTC\\node\\node.exe so end users do not need Node installed." />
+  </Target>
+
+  <Target Name="BuildWebRtcPayloadZip" BeforeTargets="CoreCompile" DependsOnTargets="EnsureWebRtcPayloadPresent">
+    <PropertyGroup>
+      <_WebRtcPayloadZip>$(IntermediateOutputPath)webrtc_payload.zip</_WebRtcPayloadZip>
+    </PropertyGroup>
+
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference = 'Stop'; $zip = '$(IntermediateOutputPath)webrtc_payload.zip'; if (Test-Path $zip) { Remove-Item -Force $zip }; Compress-Archive -Path 'WebRTC\*' -DestinationPath $zip -Force&quot;" />
+  </Target>
+</Project>
