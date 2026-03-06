@@ -86,6 +86,14 @@ export default function Messages() {
     loadContacts();
   }, [token, contactsRefreshKey]);
 
+  // Function to add new contact to the list
+  const addContactToList = (newContact) => {
+    setContacts((prev) => {
+      const updated = [newContact, ...prev];
+      return updated;
+    });
+  };
+
   useEffect(() => {
     const loadHistory = async () => {
       if (!token || !activePhone) return;
@@ -133,6 +141,7 @@ export default function Messages() {
             onSelectContact={handleSelectContact}
             refreshKey={contactsRefreshKey}
             contacts={contacts}
+            onAdded={addContactToList}
           />
           <main className="flex-1 flex flex-col h-full overflow-hidden">
             <ChatWindow
@@ -153,6 +162,7 @@ export default function Messages() {
                 onSelectContact={handleSelectContact}
                 refreshKey={contactsRefreshKey}
                 contacts={contacts}
+                onAdded={addContactToList}
               />
             </div>
           )}

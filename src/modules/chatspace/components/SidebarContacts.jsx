@@ -8,7 +8,7 @@ import { MessageSquare, Users, Star, Settings, Video, LogOut, Sun, Moon, Edit } 
 
 const LAST_CHAT_KEY = 'vd_last_active_chat_phone';
 
-export default function SidebarContacts({ activePhone, onSelectContact, refreshKey = 0, contacts: externalContacts = null }) {
+export default function SidebarContacts({ activePhone, onSelectContact, refreshKey = 0, contacts: externalContacts = null, onAdded }) {
   const { token } = useAuth();
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -76,7 +76,20 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
   }, [activePhone, displayContacts, onSelectContact]);
 
   const handleAdded = (contact) => {
-    setContacts((prev) => [contact, ...prev]);
+    // Add the new contact to the existing contacts list
+    setContacts((prev) => {
+      const updated = [contact, ...prev];
+      // Also update the external contacts if they exist
+      if (externalContacts) {
+        return updated;
+      }
+      return updated;
+    });
+    
+    // Call the onAdded prop if provided
+    if (onAdded) {
+      onAdded(contact);
+    }
   };
 
   const handleSaveContact = (contact) => {

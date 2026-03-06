@@ -28,6 +28,7 @@ export default function AddContactModal({ onClose, onAdded }) {
   const { token } = useAuth();
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [fullName, setFullName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
@@ -42,10 +43,14 @@ export default function AddContactModal({ onClose, onAdded }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!fullName.trim() || !phoneNumber.trim()) {
+      setError('Name and phone number are required');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
-      const data = await contactsApi.add(token, { phoneNumber, countryCode });
+      const data = await contactsApi.add(token, { phoneNumber, countryCode, fullName });
       onAdded?.(data.contact);
       onClose();
     } catch (err) {
@@ -108,7 +113,7 @@ export default function AddContactModal({ onClose, onAdded }) {
           </div>
         </div>
 
-        <p className={`text-sm ${currentTheme.textSecondary} mb-5`}>Enter the phone number of the user you want to add.</p>
+        <p className={`text-sm ${currentTheme.textSecondary} mb-5`}>Enter the name and phone number of the user you want to add.</p>
 
         {error && (
           <div className={`mb-4 text-sm font-medium ${currentTheme.error} rounded-lg px-3 py-2 border`}>
@@ -117,6 +122,19 @@ export default function AddContactModal({ onClose, onAdded }) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label htmlFor="fullName" className={`block text-sm font-semibold ${currentTheme.textPrimary} mb-2`}>Contact Name</label>
+            <input
+              id="fullName"
+              type="text"
+              className={`w-full px-4 py-2.5 rounded-lg ${currentTheme.inputBg} border ${currentTheme.inputBorder} ${currentTheme.textPrimary} text-sm focus:outline-none focus:ring-2 ${currentTheme.focus} transition-all`}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="John Doe"
+              required
+            />
+          </div>
+
           <div>
             <label htmlFor="phoneNumber" className={`block text-sm font-semibold ${currentTheme.textPrimary} mb-2`}>Phone Number</label>
             <div className="flex gap-3">
