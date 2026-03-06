@@ -1248,7 +1248,7 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
     };
 
     const handleHostActionLog = (payload) => {
-      console.log('[MeetingRemoteControl] 📝 Received action log:', payload);
+      console.log('[DEBUG] handleHostActionLog received:', payload);
       const actionText = payload.actionType === 'mouse_click'
         ? `Clicked ${payload.actionDetails.button || 'left'} button`
         : payload.actionType === 'scroll'
@@ -1261,8 +1261,10 @@ export function MeetingRemoteControlProvider({ children, meetingId, localAuthUse
                 ? 'Session ended'
                 : payload.actionType;
 
+      console.log('[DEBUG] Adding to action logs:', actionText);
       addLog(actionText, 'action');
       if (payload.actorUserName) {
+        console.log('[DEBUG] Setting active controller name:', payload.actorUserName);
         setActiveControllerName(payload.actorUserName);
       }
     };

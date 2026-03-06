@@ -112,6 +112,7 @@ let currentControllerId = config.remoteDeviceId || null; // Strict single-contro
 // Host Priority Override state
 let isHostActive = false;
 let hostActivityTimer = null;
+let lastHostActivityTime = null;
 const HOST_IDLE_TIMEOUT = 1500; // 1.5 seconds
 
 // ======================================================
@@ -371,7 +372,6 @@ function setupDataChannel() {
     dataChannel.onopen();
   }
 }
-
 // ======================================================
 // CONTROL / ROBOTJS LOGIC
 // ======================================================
@@ -404,12 +404,42 @@ function handleControlMessage(message) {
       case 'click':
       case 'mouse_click':
         handleMouseClick(message);
+        // Log action to backend for monitoring panel
+        sendSignalingMessage('remote-action', {
+          sessionId: activeSessionId,
+          actionType: 'mouse_click',
+          actionDetails: {
+            button: message.button || 'left',
+            x: Math.round((message.x || 0) * 100),
+            y: Math.round((message.y || 0) * 100)
+          }
+        });
         break;
       case 'wheel':
         handleMouseWheel(message);
+        // Log action to backend for monitoring panel
+        sendSignalingMessage('remote-action', {
+          sessionId: activeSessionId,
+          actionType: 'scroll',
+          actionDetails: {
+            deltaX: message.deltaX || 0,
+            deltaY: message.deltaY || 0
+          }
+        });
         break;
       case 'key':
         handleKeyPress(message);
+        // Log action to backend for monitoring panel
+        sendSignalingMessage('remote-action', {
+          sessionId: activeSessionId,
+          actionType: 'key',
+          actionDetails: {
+            key: message.key || '',
+            ctrl: message.ctrl || false,
+            alt: message.alt || false,
+            shift: message.shift || false
+          }
+        });
         break;
       case 'clipboard':
         handleClipboard(message);
@@ -431,6 +461,16 @@ function handleControlMessage(message) {
  * Handle host activity notification from C# agent
  */
 function handleHostActivity() {
+  const now = Date.now();
+  
+  // Rate limiting: Only process host activity if at least 2 seconds have passed
+  if (lastHostActivityTime && (now - lastHostActivityTime) < 2000) {
+    console.log("[HostOverride] Ignoring host activity (rate limited)");
+    return;
+  }
+  
+  lastHostActivityTime = now;
+  
   if (!isHostActive) {
     console.log("[HostOverride] Host active - Remote paused");
     isHostActive = true;
@@ -441,6 +481,7 @@ function handleHostActivity() {
     clearTimeout(hostActivityTimer);
   }
 
+  // Increased timeout to reduce frequency of resume cycles
   hostActivityTimer = setTimeout(() => {
     console.log("[HostOverride] Host idle - Remote resumed");
     isHostActive = false;

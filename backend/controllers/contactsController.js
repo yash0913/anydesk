@@ -10,6 +10,12 @@ const addContact = async (req, res) => {
   const { phoneNumber, countryCode } = req.body;
 
   try {
+    // Add null check for req.user
+    if (!req.user || !req.user._id) {
+      console.error('[Contacts] req.user is undefined in addContact:', req.user);
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
     if (!phoneNumber) {
       return res.status(400).json({ message: 'Phone number is required' });
     }
@@ -50,6 +56,7 @@ const addContact = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('[Contacts] Error in addContact:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -61,24 +68,43 @@ const addContact = async (req, res) => {
  */
 const listContacts = async (req, res) => {
   try {
+    // Add null check for req.user
+    if (!req.user || !req.user._id) {
+      console.error('[Contacts] req.user is undefined:', req.user);
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
     const contacts = await Contact.find({ ownerId: req.user._id })
       .populate('contactUserId', 'fullName email countryCode phoneNumber')
       .sort({ createdAt: -1 });
 
-    const formatted = contacts.map((c) => ({
-      id: c._id,
-      user: {
-        id: c.contactUserId._id,
-        fullName: c.contactUserId.fullName,
-        email: c.contactUserId.email,
-        countryCode: c.contactUserId.countryCode,
-        phoneNumber: c.contactUserId.phoneNumber,
-      },
-      createdAt: c.createdAt,
-    }));
+    const formatted = contacts.map((c) => {
+      // Add null check for c.contactUserId to prevent undefined errors
+      if (!c.contactUserId) {
+        console.error('[Contacts] Contact has missing contactUserId:', c);
+        return {
+          id: c._id,
+          user: null,
+          createdAt: c.createdAt,
+        };
+      }
+
+      return {
+        id: c._id,
+        user: {
+          id: c.contactUserId._id,
+          fullName: c.contactUserId.fullName,
+          email: c.contactUserId.email,
+          countryCode: c.contactUserId.countryCode,
+          phoneNumber: c.contactUserId.phoneNumber,
+        },
+        createdAt: c.createdAt,
+      };
+    });
 
     res.json({ contacts: formatted });
   } catch (error) {
+    console.error('[Contacts] Error in listContacts:', error);
     res.status(500).json({ message: error.message });
   }
 };

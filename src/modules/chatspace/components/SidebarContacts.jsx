@@ -22,7 +22,17 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
       try {
         const data = await contactsApi.list(token);
         if (!cancelled) {
-          setContacts(data.contacts || []);
+          console.log('[DEBUG] Contacts loaded:', data.contacts);
+          // Filter out any contacts with missing user data
+          const validContacts = (data.contacts || []).filter(c => c && c.user);
+          if (validContacts.length !== (data.contacts || []).length) {
+            console.warn('[DEBUG] Some contacts have missing user data:', {
+              total: data.contacts?.length || 0,
+              valid: validContacts.length,
+              invalid: (data.contacts || []).length - validContacts.length
+            });
+          }
+          setContacts(validContacts);
         }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Failed to load contacts');
@@ -39,7 +49,12 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
   useEffect(() => {
     if (!activePhone) {
       const last = localStorage.getItem(LAST_CHAT_KEY);
-      if (last && contacts.some((c) => `${c.user.countryCode} ${c.user.phoneNumber}` === last)) {
+      if (last && contacts.some((c) => {
+        // Add null check for c.user to prevent undefined error
+        if (!c || !c.user) return false;
+        const phone = `${c.user.countryCode} ${c.user.phoneNumber}`;
+        return phone === last;
+      })) {
         onSelectContact(last);
       }
     } else {
@@ -76,6 +91,15 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
           )}
 
           {contacts.map((c) => {
+            // Add null check for c.user to prevent undefined error
+            if (!c || !c.user) {
+              return (
+                <div key={c.id || 'unknown'} className="px-4 py-2 text-xs text-red-400">
+                  Invalid contact data
+                </div>
+              );
+            }
+            
             const phone = `${c.user.countryCode} ${c.user.phoneNumber}`;
             const isActive = phone === activePhone;
             return (

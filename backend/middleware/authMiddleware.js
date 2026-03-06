@@ -19,11 +19,17 @@ const protect = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
       // Get user from the token and attach to the request object
-      req.user = await User.findById(decoded.id).select('-password');
+      const user = await User.findById(decoded.id).select('-password');
+      
+      if (!user) {
+        console.error('[Auth] User not found for token ID:', decoded.id);
+        return res.status(401).json({ message: 'User not found' });
+      }
 
+      req.user = user;
       next();
     } catch (error) {
-      console.error(error);
+      console.error('[Auth] Token verification failed:', error.message);
       res.status(401).json({ message: 'Not authorized, token failed' });
     }
   }
