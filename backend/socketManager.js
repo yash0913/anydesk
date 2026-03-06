@@ -172,29 +172,46 @@ function untrackUserSocket(map, key, socketId) {
 
 }
 
-
-
 function emitToUser(userId, event, payload) {
 
   if (!ioInstance || !userId) return;
 
+  // Enhanced debugging for emitToUser
+  console.log("[emitToUser] called", {
+    targetUser: userId,
+    event: event,
+    payloadPreview: typeof payload === 'object' ? JSON.stringify(payload).substring(0, 100) : payload,
+    socketsFound: onlineUsersById.get(String(userId))
+  });
+
   const sockets = onlineUsersById.get(String(userId));
   if (!sockets || sockets.size === 0) {
     console.warn(`[emitToUser] No active sockets found for userId: ${userId}`);
+    
+    // Log all registered users for debugging
+    console.log("[emitToUser] All registered users:", Array.from(onlineUsersById.keys()));
     return;
   }
 
   console.log(`[emitToUser] Sending ${event} to ${sockets.size} sockets for userId: ${userId}`);
+  
+  // Log each socket details
   sockets.forEach((socketId) => {
     const target = ioInstance.sockets.sockets.get(socketId);
+    console.log(`[emitToUser] Socket details:`, {
+      socketId: socketId,
+      exists: !!target,
+      userId: target?.userId,
+      deviceId: target?.data?.deviceId,
+      deviceType: target?.deviceType
+    });
+    
     if (target) {
       target.emit(event, payload);
     }
   });
 
 }
-
-
 
 function getDeviceRegistrySnapshotForUser(userId) {
 
@@ -589,6 +606,15 @@ function createSocketServer(server, clientOrigin) {
 
   io.on('connection', (socket) => {
     console.log('[SOCKET] New connection:', socket.id, 'userId:', socket.userId);
+    
+    // Enhanced connection logging
+    console.log('[SOCKET-DEBUG] Socket connected:', {
+      socketId: socket.id,
+      userId: socket.userId,
+      userPhone: socket.userPhone,
+      userAgent: socket.handshake.headers['user-agent'],
+      timestamp: new Date().toISOString()
+    });
 
     socket.on('register-device', (payload) => {
       console.log('[SOCKET] register-device payload:', payload);
@@ -2778,4 +2804,4 @@ function getMetrics() {
 
 
 
-module.exports = { createSocketServer, emitToUser, emitToDevice, getMetrics, isUserInMeeting, handleMeetingAccessTransfer };
+module.exports = { createSocketServer, emitToUser, emitToDevice, getMetrics, isUserInMeeting, handleMeetingAccessTransfer, onlineUsersById };

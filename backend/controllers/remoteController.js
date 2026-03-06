@@ -8,6 +8,9 @@ const ContactLink = require('../models/ContactLink');
 
 const { emitToUser, emitToDevice, handleMeetingAccessTransfer } = require('../socketManager');
 
+// Import the onlineUsersById map for debugging
+const { onlineUsersById } = require('../socketManager');
+
 const { createSessionToken } = require('../utils/sessionToken');
 
 
@@ -878,7 +881,14 @@ const requestMeetingRemoteSession = async (req, res) => {
 
   const { toUserId } = req.body || {};
 
-  // ...
+  // Enhanced debugging for remote requests
+  console.log("Remote request received", {
+    fromUser: fromUserId,
+    toUser: toUserId,
+    meetingId: req.body.meetingId,
+    timestamp: new Date().toISOString(),
+    userAgent: req.headers['user-agent']
+  });
 
 
   if (!fromUserId) {
@@ -1069,6 +1079,13 @@ const requestMeetingRemoteSession = async (req, res) => {
     };
 
 
+
+    // Debug: Log all sockets currently registered for this user
+    console.log(`User ${effectiveToUserId} sockets:`, {
+      totalSockets: onlineUsersById?.get(String(effectiveToUserId))?.size || 0,
+      socketIds: Array.from(onlineUsersById?.get(String(effectiveToUserId)) || []),
+      timestamp: new Date().toISOString()
+    });
 
     emitToUser(effectiveToUserId, 'desklink-remote-request', payload);
 
