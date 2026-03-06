@@ -75,8 +75,7 @@ export default function MeetDashboard() {
     <div className="flex h-screen overflow-hidden bg-[#020617] text-slate-50">
       <SidebarShell />
 
-      <main className="relative flex-1">
-        {/* Dynamic Background Glows - Adds Depth */}
+<main className="relative flex-1 overflow-y-auto custom-scrollbar">        {/* Dynamic Background Glows - Adds Depth */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -left-[10%] top-[10%] h-[500px] w-[500px] rounded-full bg-indigo-500/10 blur-[120px]" />
           <div className="absolute -right-[5%] bottom-[5%] h-[400px] w-[400px] rounded-full bg-blue-600/10 blur-[100px]" />
@@ -93,7 +92,7 @@ export default function MeetDashboard() {
               </h1>
               <p className="text-sm text-slate-400">Face-to-face collaboration, instantly.</p>
             </div>
-            
+          
           </header>
 
           {/* Hero Content Area */}
@@ -131,8 +130,8 @@ export default function MeetDashboard() {
           </div>
 
           {/* Footer Subtle Text */}
-          <footer className="mt-auto text-center text-[11px] text-slate-600 uppercase tracking-widest pb-4">
-            VisionDesk Encrypted Media Protocol 1.0
+<footer className="mt-8 text-center text-[11px] text-slate-600 uppercase tracking-widest pb-4">
+              VisionDesk Encrypted Media Protocol 1.0
           </footer>
         </div>
       </main>

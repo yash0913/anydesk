@@ -69,6 +69,19 @@ function VideoRoomInner({
 
 }) {
 
+  const [copySuccess, setCopySuccess] = React.useState(false);
+
+  const handleCopyMeetingLink = async () => {
+    const meetingLink = `${window.location.origin}/room/${roomId}`;
+    try {
+      await navigator.clipboard.writeText(meetingLink);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy meeting link:', err);
+    }
+  };
+
   const derivedLocalAuthUserId = (() => {
     try {
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem('vd_user_profile') : null;
@@ -617,9 +630,27 @@ function VideoRoomInner({
       {/* Top Bar with Agent status and Room info */}
       <div className="absolute top-4 left-6 right-6 z-30 flex items-center justify-between pointer-events-none">
         <div className="flex items-center gap-4 pointer-events-auto">
-          <div className="bg-slate-900/40 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10">
-            <h1 className="text-xl font-bold text-white tracking-tight">Meeting Room</h1>
-            <p className="text-xs text-slate-400 font-medium">{shortId(roomId)}</p>
+          <div 
+            className="bg-slate-900/40 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 cursor-pointer hover:bg-slate-900/60 transition-all duration-200 group"
+            onClick={handleCopyMeetingLink}
+            title="Click to copy meeting link"
+          >
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-white tracking-tight group-hover:text-blue-400 transition-colors">
+                Meeting Room
+              </h1>
+              {copySuccess && (
+                <span className="text-xs text-green-400 font-medium animate-pulse">
+                  Copied!
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 font-medium group-hover:text-slate-300 transition-colors">
+              {shortId(roomId)} 
+              <span className="ml-1 text-slate-500 group-hover:text-slate-400">
+                (click to copy link)
+              </span>
+            </p>
           </div>
           <AgentStatusBanner />
         </div>

@@ -41,18 +41,9 @@ const BackgroundShapes = () => (
 );
 
 const ThemeToggle = ({ theme, toggleTheme }) => (
-    <button
-        type="button"
-        // Styling is fixed for dark mode components
-        className="absolute top-4 right-4 bg-slate-800 border border-slate-700
-                   cursor-pointer text-slate-400 transition-all p-2 rounded-full
-                   hover:text-indigo-400 hover:scale-105"
-        onClick={toggleTheme}
-        aria-label={`Switch theme`}
-        title="Toggle Theme"
-    >
+    
+    <button>
         {/* Icon still switches for visual feedback, even if the background is locked */}
-        {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
     </button>
     
 );
