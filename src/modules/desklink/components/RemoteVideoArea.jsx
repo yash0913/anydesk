@@ -49,16 +49,82 @@ export default function RemoteVideoArea({
   }, []);
 
   const getNormalizedCoords = (e) => {
+    // Get container bounding box
     const rect = videoRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    return { x, y };
+    
+    // Get actual video resolution
+    const videoWidth = videoRef.current.videoWidth || rect.width;
+    const videoHeight = videoRef.current.videoHeight || rect.height;
+    
+    // Get container size
+    const containerWidth = rect.width;
+    const containerHeight = rect.height;
+    
+    // Compute aspect ratios
+    const videoAspect = videoWidth / videoHeight;
+    const containerAspect = containerWidth / containerHeight;
+    
+    // Calculate rendered video dimensions and black bar offsets
+    let renderWidth, renderHeight;
+    let offsetX = 0;
+    let offsetY = 0;
+    
+    if (videoAspect > containerAspect) {
+      // Video is wider than container - black bars top/bottom
+      renderWidth = containerWidth;
+      renderHeight = containerWidth / videoAspect;
+      offsetY = (containerHeight - renderHeight) / 2;
+    } else {
+      // Video is taller than container - black bars left/right
+      renderHeight = containerHeight;
+      renderWidth = containerHeight * videoAspect;
+      offsetX = (containerWidth - renderWidth) / 2;
+    }
+    
+    // Adjust mouse position by subtracting black bar offsets
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    const adjustedX = mouseX - offsetX;
+    const adjustedY = mouseY - offsetY;
+    
+    // Ignore clicks outside the actual video area
+    if (
+      adjustedX < 0 ||
+      adjustedY < 0 ||
+      adjustedX > renderWidth ||
+      adjustedY > renderHeight
+    ) {
+      // Return null to indicate the click should be ignored
+      return null;
+    }
+    
+    // Normalize coordinates only within the visible video area
+    const normalizedX = adjustedX / renderWidth;
+    const normalizedY = adjustedY / renderHeight;
+    
+    // Debug logging (can be removed in production)
+    console.log('[COORD-FIX] Corrected coordinate calculation:', {
+      videoResolution: { width: videoWidth, height: videoHeight },
+      containerSize: { width: containerWidth, height: containerHeight },
+      aspectRatios: { video: videoAspect, container: containerAspect },
+      renderedVideo: { width: renderWidth, height: renderHeight },
+      blackBarOffsets: { x: offsetX, y: offsetY },
+      mousePosition: { rawX: mouseX, rawY: mouseY },
+      adjustedPosition: { x: adjustedX, y: adjustedY },
+      normalizedCoords: { x: normalizedX, y: normalizedY }
+    });
+    
+    return { x: normalizedX, y: normalizedY };
   };
 
   const handleMouseMove = (e) => {
     if (!permissions?.allowControl) return;
 
-    const { x, y } = getNormalizedCoords(e);
+    const coords = getNormalizedCoords(e);
+    if (!coords) return;
+
+    const { x, y } = coords;
     setRemoteCursor({ x: x * 100, y: y * 100, visible: true });
 
     const message = createMouseMoveMessage(x, y, sessionId, token);
@@ -68,7 +134,10 @@ export default function RemoteVideoArea({
   const handleMouseClick = (e) => {
     if (!permissions?.allowControl) return;
 
-    const { x, y } = getNormalizedCoords(e);
+    const coords = getNormalizedCoords(e);
+    if (!coords) return; // Click outside video area, ignore it
+
+    const { x, y } = coords;
     const button = e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right';
     const message = createMouseClickMessage(x, y, button, sessionId, token);
     onControlMessage(message);
