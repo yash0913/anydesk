@@ -878,7 +878,28 @@ const requestMeetingRemoteSession = async (req, res) => {
 
   const { toUserId } = req.body || {};
 
-  // ...
+  // DEBUG: Log incoming remote request details
+  console.log('[REMOTE-REQUEST-DEBUG] Remote request received:', {
+    fromUser: fromUserId,
+    toUser: toUserId,
+    requestBody: req.body,
+    userAgent: req.get('User-Agent'),
+    timestamp: new Date().toISOString()
+  });
+
+  // DEBUG: Log all current sockets for this user
+  const { onlineUsersById } = require('../socketManager');
+  const userSockets = onlineUsersById.get(String(toUserId));
+  console.log('[REMOTE-REQUEST-DEBUG] Current sockets for target user:', {
+    targetUserId: toUserId,
+    socketsFound: userSockets ? Array.from(userSockets) : 'none',
+    socketCount: userSockets ? userSockets.size : 0
+  });
+
+  // DEBUG: Log all online users and devices
+  console.log('[REMOTE-REQUEST-DEBUG] All online users:', Array.from(onlineUsersById.keys()));
+  const { deviceRegistryById } = require('../socketManager');
+  console.log('[REMOTE-REQUEST-DEBUG] All device registry:', Array.from(deviceRegistryById.entries()));
 
 
   if (!fromUserId) {

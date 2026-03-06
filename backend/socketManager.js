@@ -172,8 +172,6 @@ function untrackUserSocket(map, key, socketId) {
 
 }
 
-
-
 function emitToUser(userId, event, payload) {
 
   if (!ioInstance || !userId) return;
@@ -181,50 +179,37 @@ function emitToUser(userId, event, payload) {
   const sockets = onlineUsersById.get(String(userId));
   if (!sockets || sockets.size === 0) {
     console.warn(`[emitToUser] No active sockets found for userId: ${userId}`);
+    console.log(`[emitToUser-DEBUG] Current onlineUsersById registry:`, Array.from(onlineUsersById.keys()));
     return;
   }
+
+  console.log(`[emitToUser-DEBUG] Called with:`, {
+    targetUser: userId,
+    event: event,
+    payload: payload,
+    socketsFound: Array.from(sockets),
+    socketDetails: Array.from(sockets).map(socketId => {
+      const socket = ioInstance.sockets.sockets.get(socketId);
+      return {
+        socketId,
+        connected: socket?.connected,
+        userId: socket?.userId,
+        userPhone: socket?.userPhone
+      };
+    })
+  });
 
   console.log(`[emitToUser] Sending ${event} to ${sockets.size} sockets for userId: ${userId}`);
   sockets.forEach((socketId) => {
     const target = ioInstance.sockets.sockets.get(socketId);
     if (target) {
+      console.log(`[emitToUser-DEBUG] Emitting to socket ${socketId}:`, {
+        event: event,
+        payload: payload,
+        socketConnected: target.connected,
+        socketUserId: target.userId
+      });
       target.emit(event, payload);
-    }
-  });
-
-}
-
-
-
-function getDeviceRegistrySnapshotForUser(userId) {
-
-  const out = [];
-
-  for (const [deviceId, meta] of deviceRegistryById.entries()) {
-
-    if (meta && String(meta.userId) === String(userId)) {
-
-      out.push({ deviceId, ...meta });
-
-    }
-
-  }
-
-  out.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
-
-  return out;
-
-}
-
-
-
-function emitToDevice(deviceId, event, payload) {
-
-  if (!ioInstance || !deviceId) return;
-
-  const devId = String(deviceId);
-
-  const meta = deviceRegistryById.get(devId);
 
   const isDeviceOnline = !!meta && meta.isOnline === true;
 
@@ -589,6 +574,13 @@ function createSocketServer(server, clientOrigin) {
 
   io.on('connection', (socket) => {
     console.log('[SOCKET] New connection:', socket.id, 'userId:', socket.userId);
+    console.log('[SOCKET-DEBUG] Connection details:', {
+      socketId: socket.id,
+      userId: socket.userId,
+      userPhone: socket.userPhone,
+      auth: socket.handshake.auth,
+      userAgent: socket.handshake.headers['user-agent']
+    });
 
     socket.on('register-device', (payload) => {
       console.log('[SOCKET] register-device payload:', payload);
@@ -777,56 +769,6 @@ function createSocketServer(server, clientOrigin) {
             });
           }
         }
-      }
-    }, STALE_CHECK_INTERVAL);
-
-
-
-    // Universal device registration for both web clients and native agents
-    socket.on("register-device", ({ deviceId, userId, type }) => {
-      try {
-        if (!deviceId || !userId || !type) {
-          console.warn('[REGISTER-DEVICE] Missing required fields:', { deviceId, userId, type });
-          return;
-        }
-
-        // Prevent guests from registering as devices
-        if (socket.userId && String(socket.userId).startsWith('guest-')) {
-          console.warn('[REGISTER-DEVICE] Guest users cannot register as devices:', {
-            socketUserId: socket.userId,
-            deviceId: deviceId
-          });
-          return;
-        }
-
-        const devId = String(deviceId);
-        const userIdStr = String(userId);
-        const deviceType = String(type);
-
-        // Safety check: prevent overwriting native-agent entries (could break active sessions)
-        // Web devices can overwrite stale entries from disconnected sessions.
-        const existingDevice = deviceRegistryById.get(devId);
-        if (existingDevice && existingDevice.socketId !== socket.id) {
-          if (existingDevice.deviceType === 'native-agent') {
-            console.warn('[REGISTER-DEVICE] Refusing to overwrite native-agent entry:', {
-              deviceId: devId,
-              existingSocket: existingDevice.socketId,
-              newSocket: socket.id,
-            });
-            return;
-          }
-          // Web device: old socket likely disconnected — allow overwrite
-          console.log('[REGISTER-DEVICE] Overwriting stale web device entry:', devId);
-        }
-
-        // Store device reference on socket for cleanup
-        socket.deviceId = devId;
-        socket.userId = userIdStr;
-        socket.deviceType = deviceType;
-
-        // Add to device registry for routing
-        deviceRegistryById.set(devId, {
-          userId: userIdStr,
           deviceType: deviceType,
           socketId: socket.id,
           lastSeen: Date.now(),
