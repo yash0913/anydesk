@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { usePresence } from '../../../context/PresenceContext.jsx';
 import { Send, Smile, Paperclip, CheckCheck, Check } from 'lucide-react';
 
 // ====================================================================
@@ -150,6 +151,7 @@ function InputBarComponent({ onSend }) {
 
 export default function ChatWindowScreen({ activeContact, messages, onSend, currentUser }) {
   const scrollRef = useRef(null);
+  const { isUserOnline } = usePresence();
 
   // Auto-scroll to bottom whenever messages or activeContact change
   useEffect(() => {
@@ -170,8 +172,10 @@ export default function ChatWindowScreen({ activeContact, messages, onSend, curr
       return currentUser ? `${currentUser.countryCode} ${currentUser.phoneNumber}` : '';
   }, [currentUser]);
   
-  const statusLabel = 'Online';
-  const statusColor = 'bg-emerald-500';
+  // Dynamic presence status
+  const isOnline = isUserOnline(activeContact.phone);
+  const statusLabel = isOnline ? "Online" : "Offline";
+  const statusColor = isOnline ? "bg-emerald-500" : "bg-gray-500";
 
   return (
     <section className="flex-1 flex flex-col bg-slate-950/80">

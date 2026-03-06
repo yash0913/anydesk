@@ -11,8 +11,19 @@ const contactSchema = new mongoose.Schema(
     contactUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+    },
+    phone: {
+      type: String,
       required: true,
-      index: true,
+      trim: true,
+    },
+    fullName: {
+      type: String,
+      trim: true,
+    },
+    saved: {
+      type: Boolean,
+      default: false,
     },
     createdAt: {
       type: Date,
@@ -24,6 +35,7 @@ const contactSchema = new mongoose.Schema(
   }
 );
 
-contactSchema.index({ ownerId: 1, contactUserId: 1 }, { unique: true });
+contactSchema.index({ ownerId: 1, phone: 1 }, { unique: true });
+contactSchema.index({ ownerId: 1, contactUserId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Contact', contactSchema);

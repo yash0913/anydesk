@@ -4,14 +4,26 @@ import ChatWindow from '../components/ChatWindow.jsx';
 import SidebarShell from '../components/SidebarShell.jsx';
 import { useAuth } from '../../auth/hooks/useAuth.js';
 import { messagesApi } from '../services/messages.api.js';
+import { contactsApi } from '../services/contacts.api.js';
 import { useChatSocket } from '../hooks/useChatSocket.js';
+import { usePresence } from '../../context/PresenceContext.jsx';
 
 export default function Messages() {
   const { user, token } = useAuth();
   const [activePhone, setActivePhone] = useState('');
   const [activeContact, setActiveContact] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [contacts, setContacts] = useState([]); // New state to store contacts
   const [contactsRefreshKey, setContactsRefreshKey] = useState(0);
+  const { registerUser } = usePresence();
+
+  // Register user for presence tracking when component mounts
+  useEffect(() => {
+    if (user && token) {
+      const userPhone = `${user.countryCode} ${user.phoneNumber}`;
+      registerUser(user._id, userPhone);
+    }
+  }, [user, token, registerUser]);
 
   const handleSocketMessage = useCallback(
     (msg) => {
@@ -34,14 +46,45 @@ export default function Messages() {
               phoneNumber,
               phone: msg.senderPhone,
             });
+            // Add unknown sender to contacts list
+            if (!contacts.find((contact) => contact.phone === msg.senderPhone)) {
+              setContacts((prev) => [...prev, {
+                fullName: msg.senderPhone,
+                countryCode,
+                phoneNumber,
+                phone: msg.senderPhone,
+              }]);
+            }
           }
         }
       }
     },
-    [activePhone, user]
+    [activePhone, user, contacts]
   );
 
   const { sendMessage } = useChatSocket({ token, onMessage: handleSocketMessage });
+
+  // Load saved contacts and merge with unknown contacts
+  useEffect(() => {
+    const loadContacts = async () => {
+      if (!token) return;
+      try {
+        const data = await contactsApi.list(token);
+        const savedContacts = data.contacts || [];
+        
+        // Merge saved contacts with unknown contacts (from messages)
+        const mergedContacts = savedContacts.map(saved => ({
+          ...saved,
+          saved: true
+        }));
+        
+        setContacts(mergedContacts);
+      } catch (err) {
+        console.error('Failed to load contacts:', err);
+      }
+    };
+    loadContacts();
+  }, [token, contactsRefreshKey]);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -85,6 +128,7 @@ export default function Messages() {
             activePhone={activePhone}
             onSelectContact={handleSelectContact}
             refreshKey={contactsRefreshKey}
+            contacts={contacts}
           />
           <main className="flex-1 flex flex-col h-full overflow-hidden">
             <ChatWindow
@@ -104,6 +148,7 @@ export default function Messages() {
                 activePhone={activePhone}
                 onSelectContact={handleSelectContact}
                 refreshKey={contactsRefreshKey}
+                contacts={contacts}
               />
             </div>
           )}

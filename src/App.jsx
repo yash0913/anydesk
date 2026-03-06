@@ -13,10 +13,11 @@ import Signup from './modules/auth/pages/Signup.jsx';
 // --------------------
 import { AuthProvider } from './modules/auth/context/AuthContext.jsx';
 import { useAuth } from './modules/auth/hooks/useAuth.js';
+import { PresenceProvider } from './context/PresenceContext.jsx';
 
 function AuthGuard() {
   const location = useLocation();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, token } = useAuth();
 
   if (loading) {
     return (
@@ -32,7 +33,11 @@ function AuthGuard() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return <Outlet />;
+  return (
+    <PresenceProvider token={token}>
+      <Outlet />
+    </PresenceProvider>
+  );
 }
 
 export default function App() {

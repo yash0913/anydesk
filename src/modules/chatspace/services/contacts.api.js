@@ -21,14 +21,26 @@ export const contactsApi = {
     return parseJSON(res);
   },
 
-  async add(token, { phoneNumber, countryCode }) {
+  async add(token, { phoneNumber, countryCode, fullName }) {
     const res = await fetch(`${API_BASE}/contacts/add`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ phoneNumber, countryCode }),
+      body: JSON.stringify({ phoneNumber, countryCode, fullName }),
+    });
+    return parseJSON(res);
+  },
+
+  async save(token, { phone, fullName }) {
+    const res = await fetch(`${API_BASE}/contacts/save`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ phone, fullName }),
     });
     return parseJSON(res);
   },

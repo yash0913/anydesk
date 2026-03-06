@@ -626,13 +626,25 @@ function createSocketServer(server, clientOrigin) {
       }
     });
 
-    trackUserSocket(onlineUsersByPhone, socket.userPhone, socket.id);
-
-    trackUserSocket(onlineUsersById, socket.userId, socket.id);
-
-
-
-    // DeskLink registration
+    // User registration for presence tracking
+    socket.on('register-user', ({ userId, phone }) => {
+      console.log('[PRESENCE] User registration:', { userId, phone, socketId: socket.id });
+      
+      socket.userId = String(userId);
+      socket.userPhone = phone;
+      
+      // Track user in presence maps
+      trackUserSocket(onlineUsersById, socket.userId, socket.id);
+      trackUserSocket(onlineUsersByPhone, socket.userPhone, socket.id);
+      
+      // Broadcast user online to all connected clients
+      socket.broadcast.emit('user-online', {
+        userId: socket.userId,
+        phone: socket.userPhone
+      });
+      
+      console.log('[PRESENCE] User online broadcast:', { userId: socket.userId, phone: socket.userPhone });
+    });
 
     socket.on('register', async ({ deviceId, deviceType, platform, label, osInfo, deviceName }) => {
 
@@ -2729,10 +2741,30 @@ function createSocketServer(server, clientOrigin) {
       // Clean up user tracking
       if (userId) {
         untrackUserSocket(onlineUsersById, userId, socket.id);
+        
+        // Check if user has no more active sockets and broadcast offline
+        const userSockets = onlineUsersById.get(userId);
+        if (!userSockets || userSockets.size === 0) {
+          console.log('[PRESENCE] User offline broadcast:', { userId, phone: socket.userPhone });
+          io.emit('user-offline', {
+            userId: userId,
+            phone: socket.userPhone
+          });
+        }
       }
 
       if (socket.userPhone) {
         untrackUserSocket(onlineUsersByPhone, socket.userPhone, socket.id);
+        
+        // Check if phone has no more active sockets and broadcast offline
+        const phoneSockets = onlineUsersByPhone.get(socket.userPhone);
+        if (!phoneSockets || phoneSockets.size === 0) {
+          console.log('[PRESENCE] Phone offline broadcast:', { userId, phone: socket.userPhone });
+          io.emit('user-offline', {
+            userId: userId,
+            phone: socket.userPhone
+          });
+        }
       }
 
       // Clean up activeControllers if this user was a controller

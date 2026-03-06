@@ -2,18 +2,30 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/hooks/useAuth.js';
 import { contactsApi } from '../services/contacts.api.js';
 import AddContactModal from './AddContactModal.jsx';
+import SaveContactModal from './SaveContactModal.jsx';
 import { MessageSquare, Users, Star, Settings, Video, LogOut, Sun, Moon } from 'lucide-react'; // Real Icons
 
 const LAST_CHAT_KEY = 'vd_last_active_chat_phone';
 
-export default function SidebarContacts({ activePhone, onSelectContact, refreshKey = 0 }) {
+export default function SidebarContacts({ activePhone, onSelectContact, refreshKey = 0, contacts: externalContacts = null }) {
   const { token } = useAuth();
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [showSave, setShowSave] = useState(false);
+  const [selectedContact, setSelectedContact] = useState(null);
+
+  // Use external contacts if provided, otherwise fetch them
+  const displayContacts = externalContacts || contacts;
 
   useEffect(() => {
+    // Only fetch contacts if external contacts are not provided
+    if (externalContacts !== null) {
+      setContacts(externalContacts);
+      return;
+    }
+
     let cancelled = false;
     const load = async () => {
       if (!token) return;
@@ -24,7 +36,7 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
         if (!cancelled) {
           console.log('[DEBUG] Contacts loaded:', data.contacts);
           // Filter out any contacts with missing user data
-          const validContacts = (data.contacts || []).filter(c => c && c.user);
+          const validContacts = (data.contacts || []).filter(c => c && c.phone);
           if (validContacts.length !== (data.contacts || []).length) {
             console.warn('[DEBUG] Some contacts have missing user data:', {
               total: data.contacts?.length || 0,
@@ -44,26 +56,40 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
     return () => {
       cancelled = true;
     };
-  }, [token, refreshKey]);
+  }, [token, refreshKey, externalContacts]);
 
   useEffect(() => {
     if (!activePhone) {
       const last = localStorage.getItem(LAST_CHAT_KEY);
-      if (last && contacts.some((c) => {
-        // Add null check for c.user to prevent undefined error
-        if (!c || !c.user) return false;
-        const phone = `${c.user.countryCode} ${c.user.phoneNumber}`;
-        return phone === last;
+      if (last && displayContacts.some((c) => {
+        // Add null check for c to prevent undefined error
+        if (!c || !c.phone) return false;
+        return c.phone === last;
       })) {
         onSelectContact(last);
       }
     } else {
       localStorage.setItem(LAST_CHAT_KEY, activePhone);
     }
-  }, [activePhone, contacts, onSelectContact]);
+  }, [activePhone, displayContacts, onSelectContact]);
 
   const handleAdded = (contact) => {
     setContacts((prev) => [contact, ...prev]);
+  };
+
+  const handleSaveContact = (contact) => {
+    setSelectedContact(contact);
+    setShowSave(true);
+  };
+
+  const handleContactSaved = (updatedContact) => {
+    setContacts((prev) => 
+      prev.map((c) => 
+        c.id === updatedContact.id ? updatedContact : c
+      )
+    );
+    setShowSave(false);
+    setSelectedContact(null);
   };
 
   return (
@@ -90,17 +116,17 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
             <div className="px-4 py-3 text-xs text-slate-500">Loading contacts…</div>
           )}
 
-          {contacts.map((c) => {
-            // Add null check for c.user to prevent undefined error
-            if (!c || !c.user) {
+          {displayContacts.map((c) => {
+            // Add null check for c to prevent undefined error
+            if (!c) {
               return (
-                <div key={c.id || 'unknown'} className="px-4 py-2 text-xs text-red-400">
+                <div key="unknown" className="px-4 py-2 text-xs text-red-400">
                   Invalid contact data
                 </div>
               );
             }
             
-            const phone = `${c.user.countryCode} ${c.user.phoneNumber}`;
+            const phone = c.phone;
             const isActive = phone === activePhone;
             return (
               <button
@@ -113,7 +139,7 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
                 }`}
               >
                 <div className="w-9 h-9 rounded-2xl bg-slate-700 flex items-center justify-center text-xs font-semibold text-white">
-                  {c.user.fullName
+                  {c.fullName
                     .split(' ')
                     .map((p) => p[0])
                     .join('')
@@ -122,14 +148,28 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
-                    <div className="text-slate-100 text-sm truncate">{c.user.fullName}</div>
-                    {!c.saved && (
+                    <div className="text-slate-100 text-sm truncate">{c.fullName}</div>
+                    {c.saved === false && (
                       <span className="px-1.5 py-0.5 rounded-full bg-slate-800 text-[9px] text-slate-400 uppercase">
                         unsaved
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-slate-500 truncate">{phone}</div>
+                  <div className="text-[11px] text-slate-500 truncate flex items-center gap-2">
+                    {c.phone}
+                    {c.saved === false && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSaveContact(c);
+                        }}
+                        className="text-indigo-400 hover:text-indigo-300 text-xs underline"
+                        title="Save contact"
+                      >
+                        Save
+                      </button>
+                    )}
+                  </div>
                 </div>
               </button>
             );
@@ -138,6 +178,14 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
 
       {showAdd && (
         <AddContactModal onClose={() => setShowAdd(false)} onAdded={handleAdded} />
+      )}
+      
+      {showSave && selectedContact && (
+        <SaveContactModal 
+          contact={selectedContact} 
+          onClose={() => setShowSave(false)} 
+          onSaved={handleContactSaved}
+        />
       )}
     </section>
   );

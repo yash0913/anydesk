@@ -31,6 +31,11 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Phone number is required'],
       trim: true,
     },
+    phone: {
+      type: String,
+      trim: true,
+      index: true,
+    },
     password: {
       type: String,
       required: [true, 'Please provide a password'],
@@ -82,6 +87,30 @@ userSchema.pre('save', async function (next) {
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
+
+// Pre-save middleware to normalize phone number
+userSchema.pre('save', function (next) {
+  if (this.isModified('countryCode') || this.isModified('phoneNumber')) {
+    // Normalize phone number to +91 format without spaces
+    const code = (this.countryCode || '').trim();
+    const phone = (this.phoneNumber || '').trim();
+    
+    // Remove all spaces and special characters
+    const cleanPhone = phone.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+    
+    // Ensure + prefix for country code
+    const cleanCode = code.startsWith('+') ? code : `+${code}`;
+    
+    // If phone already has country code, use as-is
+    if (cleanPhone.startsWith('+')) {
+      this.phone = cleanPhone;
+    } else {
+      // Otherwise, combine with country code
+      this.phone = `${cleanCode}${cleanPhone}`;
+    }
+  }
   next();
 });
 
