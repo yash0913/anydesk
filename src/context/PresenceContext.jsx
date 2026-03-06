@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getSocket } from '../../socket.js';
+import { getSocket } from '../socket.js';
 
 const PresenceContext = createContext();
 

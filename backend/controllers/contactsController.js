@@ -118,8 +118,8 @@ const listContacts = async (req, res) => {
         console.error('[Contacts] Contact has missing contactUserId:', c);
         return {
           id: c._id,
-          phone: c.phone,
-          fullName: c.fullName,
+          phone: c.phone || 'Unknown',
+          fullName: c.fullName || 'Unknown',
           saved: c.saved,
           contactUserId: null,
         };
@@ -127,10 +127,10 @@ const listContacts = async (req, res) => {
 
       return {
         id: c._id,
-        phone: c.phone,
-        fullName: c.fullName || c.contactUserId.fullName,
+        phone: c.phone || (c.contactUserId ? `${c.contactUserId.countryCode} ${c.contactUserId.phoneNumber}` : 'Unknown'),
+        fullName: c.fullName || c.contactUserId?.fullName || 'Unknown',
         saved: c.saved,
-        contactUserId: c.contactUserId._id,
+        contactUserId: c.contactUserId?._id,
       };
     });
 

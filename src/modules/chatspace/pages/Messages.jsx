@@ -6,7 +6,7 @@ import { useAuth } from '../../auth/hooks/useAuth.js';
 import { messagesApi } from '../services/messages.api.js';
 import { contactsApi } from '../services/contacts.api.js';
 import { useChatSocket } from '../hooks/useChatSocket.js';
-import { usePresence } from '../../context/PresenceContext.jsx';
+import { usePresence } from '../../../context/PresenceContext.jsx';
 
 export default function Messages() {
   const { user, token } = useAuth();
@@ -100,6 +100,10 @@ export default function Messages() {
   }, [token, activePhone]);
 
   const handleSelectContact = (phone) => {
+    if (!phone) {
+      return;
+    }
+    
     setActivePhone(phone);
     const [countryCode, ...rest] = phone.split(' ');
     const phoneNumber = rest.join(' ');

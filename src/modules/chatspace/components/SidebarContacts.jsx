@@ -3,7 +3,8 @@ import { useAuth } from '../../auth/hooks/useAuth.js';
 import { contactsApi } from '../services/contacts.api.js';
 import AddContactModal from './AddContactModal.jsx';
 import SaveContactModal from './SaveContactModal.jsx';
-import { MessageSquare, Users, Star, Settings, Video, LogOut, Sun, Moon } from 'lucide-react'; // Real Icons
+import EditContactModal from './EditContactModal.jsx';
+import { MessageSquare, Users, Star, Settings, Video, LogOut, Sun, Moon, Edit } from 'lucide-react'; // Real Icons
 
 const LAST_CHAT_KEY = 'vd_last_active_chat_phone';
 
@@ -14,6 +15,7 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
   const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showSave, setShowSave] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [selectedContact, setSelectedContact] = useState(null);
 
   // Use external contacts if provided, otherwise fetch them
@@ -82,6 +84,11 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
     setShowSave(true);
   };
 
+  const handleEditContact = (contact) => {
+    setSelectedContact(contact);
+    setShowEdit(true);
+  };
+
   const handleContactSaved = (updatedContact) => {
     setContacts((prev) => 
       prev.map((c) => 
@@ -89,6 +96,16 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
       )
     );
     setShowSave(false);
+    setSelectedContact(null);
+  };
+
+  const handleContactUpdated = (updatedContact) => {
+    setContacts((prev) => 
+      prev.map((c) => 
+        c.id === updatedContact.id ? updatedContact : c
+      )
+    );
+    setShowEdit(false);
     setSelectedContact(null);
   };
 
@@ -126,8 +143,14 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
               );
             }
             
-            const phone = c.phone;
+            const phone = c.phone || (c.user ? `${c.user.countryCode} ${c.user.phoneNumber}` : 'Unknown');
             const isActive = phone === activePhone;
+            
+            // Skip contacts with unknown phone numbers
+            if (!phone || phone === 'Unknown') {
+              return null;
+            }
+            
             return (
               <button
                 key={c.id}
@@ -156,19 +179,31 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
                     )}
                   </div>
                   <div className="text-[11px] text-slate-500 truncate flex items-center gap-2">
-                    {c.phone}
-                    {c.saved === false && (
+                    {phone}
+                    <div className="flex items-center gap-1">
+                      {c.saved === false && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveContact(c);
+                          }}
+                          className="text-indigo-400 hover:text-indigo-300 text-xs underline"
+                          title="Save contact"
+                        >
+                          Save
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleSaveContact(c);
+                          handleEditContact(c);
                         }}
-                        className="text-indigo-400 hover:text-indigo-300 text-xs underline"
-                        title="Save contact"
+                        className="text-slate-400 hover:text-slate-300 text-xs"
+                        title="Edit contact"
                       >
-                        Save
+                        <Edit className="w-3 h-3" />
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
               </button>
@@ -185,6 +220,14 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
           contact={selectedContact} 
           onClose={() => setShowSave(false)} 
           onSaved={handleContactSaved}
+        />
+      )}
+
+      {showEdit && selectedContact && (
+        <EditContactModal 
+          contact={selectedContact} 
+          onClose={() => setShowEdit(false)} 
+          onUpdated={handleContactUpdated}
         />
       )}
     </section>
