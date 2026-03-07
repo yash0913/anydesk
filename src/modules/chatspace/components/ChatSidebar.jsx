@@ -169,7 +169,7 @@ export default function ChatWindowScreen({ activeContact, messages, onSend, curr
   }
 
   const mePhone = useMemo(() => {
-      return currentUser ? `${currentUser.countryCode} ${currentUser.phoneNumber}` : '';
+      return currentUser && currentUser.countryCode && currentUser.phoneNumber ? `${currentUser.countryCode} ${currentUser.phoneNumber}` : '';
   }, [currentUser]);
   
   // Dynamic presence status

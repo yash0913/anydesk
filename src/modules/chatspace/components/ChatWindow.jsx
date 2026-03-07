@@ -20,7 +20,7 @@ export default function ChatWindow({ activeContact, messages, onSend, currentUse
     );
   }
 
-  const mePhone = currentUser ? `${currentUser.countryCode} ${currentUser.phoneNumber}` : '';
+  const mePhone = currentUser && currentUser.countryCode && currentUser.phoneNumber ? `${currentUser.countryCode} ${currentUser.phoneNumber}` : '';
   const statusLabel = 'Online';
   const statusColor = 'bg-emerald-500';
 

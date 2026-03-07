@@ -19,7 +19,7 @@ export default function Messages() {
 
   // Register user for presence tracking when component mounts
   useEffect(() => {
-    if (user && token) {
+    if (user && token && user.countryCode && user.phoneNumber) {
       const userPhone = `${user.countryCode} ${user.phoneNumber}`;
       registerUser(user._id, userPhone);
     }
@@ -27,7 +27,7 @@ export default function Messages() {
 
   const handleSocketMessage = useCallback(
     (msg) => {
-      const mePhone = `${user.countryCode} ${user.phoneNumber}`;
+      const mePhone = user && user.countryCode && user.phoneNumber ? `${user.countryCode} ${user.phoneNumber}` : '';
       const participants = [msg.senderPhone, msg.receiverPhone];
       const involvesMe = participants.includes(mePhone);
       const involvesActive = activePhone ? participants.includes(activePhone) : true;

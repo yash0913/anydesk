@@ -156,7 +156,7 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
               );
             }
             
-            const phone = c.phone || (c.user ? `${c.user.countryCode} ${c.user.phoneNumber}` : 'Unknown');
+            const phone = c.phone || (c.user && c.user.countryCode && c.user.phoneNumber ? `${c.user.countryCode} ${c.user.phoneNumber}` : 'Unknown');
             const isActive = phone === activePhone;
             
             // Skip contacts with unknown phone numbers
