@@ -207,7 +207,9 @@ export default function ChatWindowScreen({ activeContact, messages, onSend, curr
       {/* Messages Viewport */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {messages.map((message, index) => {
-            const senderPhone = `${message.senderCountryCode} ${message.senderPhoneNumber}`;
+            const senderPhone = message.senderCountryCode && message.senderPhoneNumber 
+                ? `${message.senderCountryCode} ${message.senderPhoneNumber}` 
+                : message.senderPhone || 'Unknown';
             const isMe = senderPhone === mePhone;
             
             // Pass the improved component
