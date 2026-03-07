@@ -195,27 +195,27 @@ export default function SidebarContacts({ activePhone, onSelectContact, refreshK
                     {phone}
                     <div className="flex items-center gap-1">
                       {c.saved === false && (
-                        <button
+                        <span
                           onClick={(e) => {
                             e.stopPropagation();
                             handleSaveContact(c);
                           }}
-                          className="text-indigo-400 hover:text-indigo-300 text-xs underline"
+                          className="text-indigo-400 hover:text-indigo-300 text-xs underline cursor-pointer"
                           title="Save contact"
                         >
                           Save
-                        </button>
+                        </span>
                       )}
-                      <button
+                      <span
                         onClick={(e) => {
                           e.stopPropagation();
                           handleEditContact(c);
                         }}
-                        className="text-slate-400 hover:text-slate-300 text-xs"
+                        className="text-slate-400 hover:text-slate-300 text-xs cursor-pointer"
                         title="Edit contact"
                       >
                         <Edit className="w-3 h-3" />
-                      </button>
+                      </span>
                     </div>
                   </div>
                 </div>
