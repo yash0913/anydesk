@@ -41,8 +41,8 @@
   }
   ,
 "build": {
-  "appId": "com.desklink.app",
-  "productName": "DeskLink",
+  "appId": "com.visiondesk.app",
+  "productName": "VisionDesk",
   "files": [
     "dist/**/*",
     "main.js",
@@ -66,12 +66,12 @@
     "allowElevation": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "DeskLink",
+    "shortcutName": "VisionDesk",
     "include": "scripts/installer.nsh",
     "perMachine": false,
     "deleteAppDataOnUninstall": false,
     "runAfterFinish": false,
-    "menuCategory": "DeskLink",
+    "menuCategory": "VisionDesk",
     "license": "LICENSE.txt"
   },
   "publish": null

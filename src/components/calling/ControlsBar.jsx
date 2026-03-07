@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, Monitor, PhoneOff,
   Users, MessageSquare, Smile, Settings, Info,
-  MoreVertical, MousePointer2, X,
+  MousePointer2,
 } from 'lucide-react';
 
 export default function ControlsBar({
@@ -13,8 +13,48 @@ export default function ControlsBar({
   isRemoteControlOpen = false, onToggleRemoteControl,
   pendingRequestCount = 0,
 }) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isMobileVisible, setIsMobileVisible] = useState(false);
+  const hideTimeoutRef = useRef(null);
+  const isMobileRef = useRef(false);
+
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      isMobileRef.current = window.innerWidth < 1024 || 'ontouchstart' in window;
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Mobile tap to show/hide logic
+  const handleMeetingAreaTap = () => {
+    if (isMobileRef.current) {
+      setIsMobileVisible(true);
+      // Clear existing timeout
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
+      // Hide after 3 seconds
+      hideTimeoutRef.current = setTimeout(() => {
+        setIsMobileVisible(false);
+      }, 3000);
+    }
+  };
+
+  // Desktop hover logic
+  const handleMouseEnter = () => {
+    if (!isMobileRef.current) {
+      setIsHovered(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (!isMobileRef.current) {
+      setIsHovered(false);
+    }
+  };
 
   // Helper for button styles to keep code clean
   const btnBase = "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-xl transition-all duration-200 active:scale-90 shadow-lg flex-shrink-0";
@@ -22,20 +62,28 @@ export default function ControlsBar({
 
   return (
     <>
-      {/* Hover area at bottom */}
+      {/* Meeting area tap handler for mobile */}
       <div 
-        className="fixed bottom-0 left-0 right-0 h-16 z-40"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        className="fixed inset-0 z-30 lg:hidden"
+        onClick={handleMeetingAreaTap}
+        onTouchStart={handleMeetingAreaTap}
+      />
+      
+      {/* Hover area at bottom - desktop only */}
+      <div 
+        className="fixed bottom-0 left-0 right-0 h-16 z-40 hidden lg:block"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       />
       
       {/* Control Bar */}
       <div 
         className={`fixed bottom-0 left-0 right-0 z-50 px-2 sm:px-4 lg:px-6 transition-transform duration-300 ease-out ${
-          isHovered ? 'translate-y-0' : 'translate-y-full'
+          isMobileRef.current ? (isMobileVisible ? 'translate-y-0' : 'translate-y-full') : 
+          (isHovered ? 'translate-y-0' : 'translate-y-full')
         }`}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         <div className="max-w-6xl mx-auto bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-[28px] p-3 shadow-2xl flex items-center justify-between gap-3 overflow-x-auto flex-nowrap mb-6">
 
@@ -61,96 +109,63 @@ export default function ControlsBar({
                 {isVideoEnabled ? <Video size={18} /> : <VideoOff size={18} />}
               </button>
 
-              {/* Chat & Reactions - always visible on mobile */}
+              {/* Chat & Reactions */}
               <button onClick={onToggleChat} className={`${btnBase} ${btnSecondary}`}>
                 <MessageSquare size={18} />
               </button>
               <button onClick={onToggleReactions} className={`${btnBase} ${btnSecondary}`}>
                 <Smile size={18} />
               </button>
-            </div>
 
-            {/* Mobile hamburger menu */}
-            <div className="relative">
+              {/* Screen Share */}
               <button
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className={`${btnBase} ${btnSecondary}`}
-                title="More options"
+                onClick={onScreenShare}
+                className={`${btnBase} ${isScreenSharing ? 'bg-blue-600 text-white' : btnSecondary}`}
+                title={isScreenSharing ? 'Stop Share' : 'Share Screen'}
               >
-                {isMobileMenuOpen ? <X size={20} /> : <MoreVertical size={20} />}
+                <Monitor size={18} />
               </button>
 
-              {/* Mobile menu dropdown */}
-              {isMobileMenuOpen && (
-                <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-xl shadow-2xl p-2 space-y-1 z-[60]">
-                  {/* Screen Share */}
-                  <button
-                    onClick={() => {
-                      onScreenShare();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                      isScreenSharing ? 'bg-blue-600 text-white' : 'bg-slate-800/80 text-slate-200 hover:bg-slate-700'
-                    }`}
-                  >
-                    <Monitor size={18} />
-                    <span className="text-sm font-medium">
-                      {isScreenSharing ? 'Stop Share' : 'Share Screen'}
+              {/* Remote Control */}
+              <button
+                onClick={onToggleRemoteControl}
+                className={`${btnBase} ${isRemoteControlOpen ? 'bg-purple-600 text-white' : btnSecondary}`}
+                title="Remote Control"
+              >
+                <div className="relative">
+                  <MousePointer2 size={18} />
+                  {pendingRequestCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white">
+                      {pendingRequestCount}
                     </span>
-                  </button>
-
-                  {/* Remote Control */}
-                  <button
-                    onClick={() => {
-                      onToggleRemoteControl();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                      isRemoteControlOpen ? 'bg-purple-600 text-white' : 'bg-slate-800/80 text-slate-200 hover:bg-slate-700'
-                    }`}
-                  >
-                    <div className="relative">
-                      <MousePointer2 size={18} />
-                      {pendingRequestCount > 0 && (
-                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white">
-                          {pendingRequestCount}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-sm font-medium">Remote Control</span>
-                  </button>
-
-                  {/* Settings */}
-                  <button
-                    onClick={() => {
-                      onToggleHostTools && onToggleHostTools();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-800/80 text-slate-200 hover:bg-slate-700 transition-colors"
-                  >
-                    <Settings size={18} />
-                    <span className="text-sm font-medium">Settings</span>
-                  </button>
-
-                  {/* Participants */}
-                  <button
-                    onClick={() => {
-                      onToggleParticipants();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-800/80 text-slate-200 hover:bg-slate-700 transition-colors"
-                  >
-                    <Users size={18} />
-                    <span className="text-sm font-medium">Participants ({participantCount})</span>
-                  </button>
+                  )}
                 </div>
-              )}
+              </button>
+
+              {/* Settings */}
+              <button
+                onClick={onToggleHostTools}
+                className={`${btnBase} ${btnSecondary}`}
+                title="Settings"
+              >
+                <Settings size={18} />
+              </button>
+
+              {/* Participants */}
+              <button
+                onClick={onToggleParticipants}
+                className={`${btnBase} ${btnSecondary}`}
+                title="Participants"
+              >
+                <Users size={18} />
+              </button>
             </div>
 
             {/* Leave button */}
             <button
               onClick={isHost && onEndMeeting ? onEndMeeting : onLeave}
               className="bg-red-500/10 hover:bg-red-600 border border-red-500/20 p-2 rounded-2xl transition-all duration-300 flex-shrink-0"
+              title={isHost ? 'End Meeting' : 'Leave'}
             >
               <PhoneOff size={16} className="text-red-500" />
             </button>
@@ -260,14 +275,6 @@ export default function ControlsBar({
           </div>
         </div>
       </div>
-
-      {/* Close mobile menu when clicking outside */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
     </>
   );
 }

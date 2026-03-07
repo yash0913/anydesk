@@ -13,21 +13,19 @@ export const usePresence = () => {
 
 export const PresenceProvider = ({ children, token }) => {
   const [onlineUsers, setOnlineUsers] = useState({});
-  const [socket, setSocket] = useState(null);
 
   // Initialize socket and presence listeners
   useEffect(() => {
     if (!token) return;
 
     let active = true;
-    let socketInstance = null;
 
     const initializePresence = async () => {
       try {
-        socketInstance = await getSocket(token);
+        // Use the global socket manager instead of creating new socket
+        const socketInstance = await getSocket(token);
+        
         if (!active) return;
-
-        setSocket(socketInstance);
 
         // Listen for user online events
         const handleUserOnline = (data) => {
@@ -41,10 +39,10 @@ export const PresenceProvider = ({ children, token }) => {
         // Listen for user offline events
         const handleUserOffline = (data) => {
           console.log('[PRESENCE] User offline:', data);
-          setOnlineUsers(prev => ({
-            ...prev,
-            [data.phone]: false
-          }));
+          setOnlineUsers(prev => {
+            const { [data.phone]: removed, ...rest } = prev;
+            return rest;
+          });
         };
 
         // Register event listeners
@@ -53,10 +51,8 @@ export const PresenceProvider = ({ children, token }) => {
 
         // Cleanup function
         return () => {
-          if (socketInstance) {
-            socketInstance.off('user-online', handleUserOnline);
-            socketInstance.off('user-offline', handleUserOffline);
-          }
+          socketInstance.off('user-online');
+          socketInstance.off('user-offline');
         };
       } catch (error) {
         console.error('[PRESENCE] Failed to initialize:', error);
@@ -67,16 +63,27 @@ export const PresenceProvider = ({ children, token }) => {
 
     return () => {
       active = false;
+      // Cleanup socket listeners when component unmounts
+      try {
+        const socketInstance = getSocket(token);
+        if (socketInstance && typeof socketInstance.off === 'function') {
+          socketInstance.off('user-online');
+          socketInstance.off('user-offline');
+        }
+      } catch (error) {
+        console.warn('[PRESENCE] Cleanup error:', error);
+      }
     };
   }, [token]);
 
   // Register current user for presence tracking
   const registerUser = useCallback((userId, phone) => {
-    if (socket && userId && phone) {
+    const socketInstance = getSocket(token);
+    if (socketInstance && userId && phone) {
       console.log('[PRESENCE] Registering user:', { userId, phone });
-      socket.emit('register-user', { userId, phone });
+      socketInstance.emit('register-user', { userId, phone });
     }
-  }, [socket]);
+  }, [token]);
 
   // Check if a user is online
   const isUserOnline = useCallback((phone) => {

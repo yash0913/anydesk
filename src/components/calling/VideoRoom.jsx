@@ -35,9 +35,6 @@ import { getSocket } from '../../socket.js';
 import AgentStatusBanner from '../../modules/desklink/components/AgentStatusBanner.jsx';
 
 
-import { WebRTCDebugPanel } from "./WebRTCDebugPanel";
-
-
 
 function shortId(id) {
 
@@ -652,7 +649,9 @@ function VideoRoomInner({
               </span>
             </p>
           </div>
-          <AgentStatusBanner />
+          <div className="hidden lg:block">
+            <AgentStatusBanner />
+          </div>
         </div>
       </div>
 
@@ -1440,8 +1439,6 @@ export default function VideoRoom(props) {
     <MeetingRemoteControlProvider meetingId={props.roomId} localAuthUserId={derivedLocalAuthUserId}>
 
       <VideoRoomInner {...props} />
-
-      <WebRTCDebugPanel />
 
     </MeetingRemoteControlProvider>
 

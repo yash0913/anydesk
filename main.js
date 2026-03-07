@@ -156,7 +156,7 @@ function createTray() {
   
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show DeskLink',
+      label: 'Show VisionDesk',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -199,7 +199,7 @@ function createTray() {
     }
   ]);
 
-  tray.setToolTip('DeskLink');
+  tray.setToolTip('VisionDesk');
   tray.setContextMenu(contextMenu);
 }
 

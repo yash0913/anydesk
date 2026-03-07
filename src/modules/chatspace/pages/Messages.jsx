@@ -36,6 +36,26 @@ export default function Messages() {
         setMessages((prev) => [...prev, msg]);
         if (msg.receiverPhone === mePhone) {
           setContactsRefreshKey((v) => v + 1);
+          // Add unknown sender to contacts list (always, not just when no active phone)
+          if (!contacts.find((contact) => contact.phone === msg.senderPhone)) {
+            const [countryCode, ...rest] = msg.senderPhone.split(' ');
+            const phoneNumber = rest.join(' ');
+            const newContact = {
+              fullName: msg.senderPhone,
+              countryCode,
+              phoneNumber,
+              phone: msg.senderPhone,
+              saved: false,
+            };
+            setContacts((prev) => [...prev, newContact]);
+            
+            // Auto-select unknown contact if no active contact
+            if (!activePhone) {
+              setActivePhone(msg.senderPhone);
+              setActiveContact(newContact);
+            }
+          }
+          
           if (!activePhone) {
             setActivePhone(msg.senderPhone);
             const [countryCode, ...rest] = msg.senderPhone.split(' ');
@@ -46,15 +66,6 @@ export default function Messages() {
               phoneNumber,
               phone: msg.senderPhone,
             });
-            // Add unknown sender to contacts list
-            if (!contacts.find((contact) => contact.phone === msg.senderPhone)) {
-              setContacts((prev) => [...prev, {
-                fullName: msg.senderPhone,
-                countryCode,
-                phoneNumber,
-                phone: msg.senderPhone,
-              }]);
-            }
           }
         }
       }
